@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}{{ product.name }} | MY BRAND{% endblock %}
+
+{% block content %}
+<section class="product-detail">
+    <div class="product-detail-main">
+        <div class="product-detail-image">
+            <img src="{{ product.image_url }}" alt="{{ product.name }}">
+        </div>
+
+        <div class="product-detail-info">
+            <h1 class="product-detail-name">{{ product.name }}</h1>
+
+            <div class="product-detail-meta">
+                <div class="product-detail-price">
+                    {% if product.price %}
+                    KRW {{ "{:,}".format(product.price) }}
+                    {% else %}
+                    가격 미정
+                    {% endif %}
+                </div>
+
+                <div class="product-detail-status">
+                    {% if product.status == "OUT_OF_STOCK" %}
+                    <span class="badge badge-out">OUT OF STOCK</span>
+                    {% else %}
+                    <span class="badge badge-in">IN STOCK</span>
+                    {% endif %}
+                </div>
+
+                <div class="product-detail-category">
+                    CATEGORY · {{ product.category }}
+                </div>
+            </div>
+
+            <div class="product-detail-desc">
+                {% if product.description %}
+                {{ product.description }}
+                {% else %}
+                이 상품에 대한 상세 설명이 들어갈 자리입니다.
+                {% endif %}
+            </div>
+
+        </div>
+    </div>
+</section>
+{% endblock %}

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>{% block title %}SHOP{% endblock %}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+    <!-- HEADER -->
+    <header class="header">
+        <div class="header-inner">
+            <div class="logo">
+                <a href="{{ url_for('shop_list') }}">MY BRAND</a>
+            </div>
+
+            <nav class="nav">
+                {% if is_admin %}
+                    <a href="{{ url_for('admin_products') }}" class="nav-link">ADMIN</a>
+                {% endif %}
+
+                {% if current_user_email %}
+                    <span class="nav-user">{{ current_user_email }}</span>
+                    <a href="{{ url_for('logout') }}" class="nav-link">LOGOUT</a>
+                {% else %}
+                    <a href="{{ url_for('login') }}" class="nav-link">LOGIN</a>
+                    <a href="{{ url_for('register') }}" class="nav-link">SIGN UP</a>
+                {% endif %}
+            </nav>
+        </div>
+    </header>
+
+    <!-- MAIN CONTENT -->
+    <main class="main">
+
+        <!-- FLASH MESSAGES -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        <div class="flash-container">
+            {% for category, msg in messages %}
+            <div class="flash-message {{ category }}">{{ msg }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="footer">
+        <div class="footer-inner">
+            <span>© {{ 2025 }} MY BRAND. ALL RIGHTS RESERVED.</span>
+        </div>
+    </footer>
+</body>
+
+</html>

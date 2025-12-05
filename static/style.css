@@ -1,0 +1,432 @@
+/* 기본 설정 */
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #ffffff;
+    color: #111111;
+}
+
+a {
+    color: inherit;
+    text-decoration: none;
+}
+
+/* HEADER */
+.header {
+    border-bottom: 1px solid #e5e5e5;
+}
+
+.header-inner {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.logo a {
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    font-size: 0.95rem;
+    text-transform: uppercase;
+}
+
+/* NAVIGATION */
+.nav {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.8rem;
+}
+
+.nav-link {
+    text-transform: uppercase;
+    font-weight: 500;
+}
+
+.nav-user {
+    font-size: 0.8rem;
+    color: #555;
+}
+
+/* MAIN */
+.main {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 24px 20px 60px;
+}
+
+/* FLASH MESSAGES */
+.flash-container {
+    margin-bottom: 16px;
+}
+
+.flash-message {
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    margin-bottom: 6px;
+}
+
+.flash-message.error {
+    background: #ffe5e5;
+    color: #b50000;
+}
+
+.flash-message.success {
+    background: #e6ffe8;
+    color: #0c7a2e;
+}
+
+/* CATEGORY BAR */
+.category-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    margin-bottom: 28px;
+}
+
+.category {
+    color: #777;
+}
+
+.category.active {
+    color: #111;
+    font-weight: 600;
+}
+
+/* PRODUCT LIST GRID */
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 32px;
+}
+
+.card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.thumb-wrap {
+    width: 100%;
+    aspect-ratio: 3 / 4;
+    overflow: hidden;
+    background: #f5f5f5;
+}
+
+.thumb-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.2s ease-out;
+}
+
+.card:hover .thumb-wrap img {
+    transform: scale(1.02);
+}
+
+.name {
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+.price {
+    font-size: 0.9rem;
+    color: #333;
+}
+
+.status.out {
+    font-size: 0.9rem;
+    color: #999;
+}
+
+/* LOGIN & SIGNUP PAGE */
+.auth-wrapper {
+    max-width: 360px;
+    margin: 40px auto 0;
+}
+
+.auth-title {
+    font-size: 1.3rem;
+    margin-bottom: 20px;
+}
+
+.auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.auth-label {
+    font-size: 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.auth-input {
+    padding: 8px 10px;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+    font-size: 0.9rem;
+}
+
+.auth-input:focus {
+    outline: none;
+    border-color: #111;
+}
+
+.auth-button {
+    margin-top: 8px;
+    padding: 10px 0;
+    border: none;
+    border-radius: 4px;
+    background: #111;
+    color: #fff;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    cursor: pointer;
+}
+
+.auth-button:hover {
+    opacity: 0.9;
+}
+
+.auth-sub {
+    margin-top: 8px;
+    font-size: 0.8rem;
+    color: #666;
+}
+
+/* FOOTER */
+.footer {
+    border-top: 1px solid #e5e5e5;
+}
+
+.footer-inner {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 16px 20px 24px;
+    font-size: 0.75rem;
+    color: #777;
+}
+
+/* ADMIN 공통 */
+.admin-title {
+    font-size: 1.2rem;
+    margin-bottom: 16px;
+}
+
+.admin-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.admin-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 14px;
+    border-radius: 4px;
+    border: none;
+    background: #111;
+    color: #fff;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    cursor: pointer;
+}
+
+.admin-button:hover {
+    opacity: 0.9;
+}
+
+.admin-secondary-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 14px;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+    background: #fff;
+    color: #333;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.admin-secondary-button:hover {
+    background: #f8f8f8;
+}
+
+/* ADMIN TABLE */
+.admin-table-wrap {
+    margin-top: 8px;
+}
+
+.admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+}
+
+.admin-table th,
+.admin-table td {
+    border-bottom: 1px solid #eee;
+    padding: 8px 6px;
+    text-align: left;
+}
+
+.admin-table th {
+    font-weight: 600;
+    color: #555;
+    background: #fafafa;
+}
+
+.admin-thumb {
+    width: 60px;
+    height: 80px;
+    overflow: hidden;
+    background: #f0f0f0;
+}
+
+.admin-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.badge {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 999px;
+    font-size: 0.7rem;
+}
+
+.badge-in {
+    background: #e6ffe8;
+    color: #0c7a2e;
+}
+
+.badge-out {
+    background: #ffe5e5;
+    color: #b50000;
+}
+
+.admin-delete-button {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    border-radius: 4px;
+    border: none;
+    background: #b50000;
+    color: #fff;
+    cursor: pointer;
+}
+
+.admin-delete-button:hover {
+    opacity: 0.9;
+}
+
+/* ADMIN FORM */
+.admin-form-wrap {
+    max-width: 480px;
+    margin: 24px auto 0;
+}
+
+.admin-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.admin-label {
+    font-size: 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.admin-input {
+    padding: 8px 10px;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+    font-size: 0.9rem;
+}
+
+.admin-input:focus {
+    outline: none;
+    border-color: #111;
+}
+
+.admin-hint {
+    font-size: 0.75rem;
+    color: #777;
+}
+
+.admin-form-actions {
+    margin-top: 8px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+
+/* PRODUCT DETAIL */
+.product-detail {
+    margin-top: 20px;
+}
+
+.product-detail-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    gap: 40px;
+}
+
+.product-detail-image img {
+    width: 100%;
+    max-width: 480px;
+    display: block;
+    object-fit: cover;
+}
+
+.product-detail-name {
+    font-size: 1.4rem;
+    margin-bottom: 12px;
+}
+
+.product-detail-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 16px;
+    font-size: 0.9rem;
+}
+
+.product-detail-price {
+    font-weight: 600;
+}
+
+.product-detail-desc {
+    font-size: 0.9rem;
+    line-height: 1.6;
+    color: #444;
+    margin-top: 8px;
+}
+
+/* 반응형 */
+@media (max-width: 768px) {
+    .product-detail-main {
+        grid-template-columns: 1fr;
+    }
+}

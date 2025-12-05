@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}SIGN UP | MY BRAND{% endblock %}
+
+{% block content %}
+  <section class="auth-wrapper">
+    <h1 class="auth-title">SIGN UP</h1>
+
+    <form method="post" class="auth-form">
+      <label class="auth-label">
+        이메일
+        <input type="email" name="email" required class="auth-input" placeholder="you@example.com">
+      </label>
+
+      <label class="auth-label">
+        이름 (선택)
+        <input type="text" name="name" class="auth-input" placeholder="홍길동">
+      </label>
+
+      <label class="auth-label">
+        비밀번호
+        <input type="password" name="password" required class="auth-input">
+      </label>
+
+      <label class="auth-label">
+        비밀번호 확인
+        <input type="password" name="password2" required class="auth-input">
+      </label>
+
+      <button type="submit" class="auth-button">회원가입</button>
+
+      <p class="auth-sub">
+        이미 계정이 있다면
+        <a href="{{ url_for('login') }}">로그인</a>
+      </p>
+    </form>
+  </section>
+{% endblock %}

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}PRODUCTS | MY BRAND{% endblock %}
+
+{% block content %}
+<!-- 카테고리 바 -->
+<nav class="category-bar">
+    {% for c in categories %}
+    {% if c == current_category %}
+    <a href="{{ url_for('shop_list', category=c) }}" class="category active">
+        {{ c }}
+    </a>
+    {% else %}
+    <a href="{{ url_for('shop_list', category=c) }}" class="category">
+        {{ c }}
+    </a>
+    {% endif %}
+    {% endfor %}
+</nav>
+
+<!-- 상품 그리드 -->
+<section class="grid">
+    {% for p in products %}
+    <article class="card">
+        <!-- 이미지 클릭 시 상세 페이지로 이동 -->
+        <a href="{{ url_for('product_detail', product_id=p.id) }}">
+            <div class="thumb-wrap">
+                <img src="{{ p.image_url }}" alt="{{ p.name }}">
+            </div>
+        </a>
+
+        <!-- 상품명 클릭해도 상세로 이동 -->
+        <a href="{{ url_for('product_detail', product_id=p.id) }}">
+            <div class="name">
+                {{ p.name }}
+            </div>
+        </a>
+
+        {% if p.status == "OUT_OF_STOCK" %}
+        <div class="status out">OUT OF STOCK</div>
+        {% else %}
+        <div class="price">
+            KRW {{ "{:,}".format(p.price) }}
+        </div>
+        {% endif %}
+    </article>
+    {% endfor %}
+</section>
+{% endblock %}

@@ -1,0 +1,11 @@
+[
+  {
+    "id": 6,
+    "name": "패딩",
+    "price": 300000,
+    "image_url": "/static/uploads/6_jpg",
+    "status": "IN_STOCK",
+    "category": "OUTER",
+    "description": "dfjsd\r\n\r\nsdlfks\r\n\r\n\r\n\r\nsdfjsdf\r\nsdfjsdf"
+  }
+]

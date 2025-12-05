@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}ADMIN | NEW PRODUCT{% endblock %}
+
+{% block content %}
+<section class="admin-form-wrap">
+    <h1 class="admin-title">새 상품 추가</h1>
+
+    <form method="post" enctype="multipart/form-data" class="admin-form">
+        <label class="admin-label">
+            상품명
+            <input type="text" name="name" required class="admin-input" placeholder="상품명 입력">
+        </label>
+
+        <label class="admin-label">
+            가격 (숫자, KRW)
+            <input type="number" name="price" min="0" step="1000" class="admin-input" placeholder="예: 79000">
+        </label>
+
+        <label class="admin-label">
+            이미지 업로드
+            <input type="file" name="image" accept="image/*" class="admin-input">
+            <span class="admin-hint">비워두면 기본 플레이스홀더 이미지가 사용됩니다.</span>
+        </label>
+
+        <label class="admin-label">
+            카테고리
+            <select name="category" class="admin-input">
+                {% for c in categories %}
+                <option value="{{ c }}">{{ c }}</option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <label class="admin-label">
+            상태
+            <select name="status" class="admin-input">
+                <option value="IN_STOCK">IN_STOCK</option>
+                <option value="OUT_OF_STOCK">OUT_OF_STOCK</option>
+            </select>
+        </label>
+
+        <label class="admin-label">
+            설명
+            <textarea name="description" rows="5" class="admin-input"
+                placeholder="소재, 핏, 디테일, 모델 정보 등을 적어주세요."></textarea>
+        </label>
+
+        <div class="admin-form-actions">
+            <a href="{{ url_for('admin_products') }}" class="admin-secondary-button">취소</a>
+            <button type="submit" class="admin-button">저장</button>
+        </div>
+    </form>
+</section>
+{% endblock %}

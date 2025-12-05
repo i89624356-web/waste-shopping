@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}ADMIN | PRODUCTS{% endblock %}
+
+{% block content %}
+<section class="admin-header">
+    <h1 class="admin-title">ADMIN · PRODUCTS</h1>
+    <a href="{{ url_for('admin_product_new') }}" class="admin-button">
+        + 새 상품 추가
+    </a>
+</section>
+
+<section class="admin-table-wrap">
+    {% if products %}
+    <table class="admin-table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>이미지</th>
+                <th>상품명</th>
+                <th>카테고리</th>
+                <th>가격</th>
+                <th>상태</th>
+                <th>관리</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in products %}
+            <tr>
+                <td>{{ p.id }}</td>
+                <td>
+                    <div class="admin-thumb">
+                        <img src="{{ p.image_url }}" alt="{{ p.name }}">
+                    </div>
+                </td>
+                <td>{{ p.name }}</td>
+                <td>{{ p.category }}</td>
+                <td>
+                    {% if p.price %}
+                    {{ "{:,}".format(p.price) }}
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td>
+                    {% if p.status == "OUT_OF_STOCK" %}
+                    <span class="badge badge-out">OUT</span>
+                    {% else %}
+                    <span class="badge badge-in">IN</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div style="display: flex; gap: 6px;">
+                        <a href="{{ url_for('admin_product_edit', product_id=p.id) }}" class="admin-secondary-button"
+                            style="padding: 4px 8px; font-size: 0.75rem;">
+                            수정
+                        </a>
+                        <form method="post" action="{{ url_for('admin_product_delete', product_id=p.id) }}"
+                            onsubmit="return confirm('정말 삭제할까요?');">
+                            <button type="submit" class="admin-delete-button">삭제</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>등록된 상품이 없습니다.</p>
+    {% endif %}
+</section>
+{% endblock %}
