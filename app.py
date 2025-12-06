@@ -50,7 +50,7 @@ def allowed_file(filename: str) -> bool:
 
 
 # 관리자 이메일 목록 (여기에 있는 이메일로 가입하면 관리자 취급)
-ADMIN_EMAILS = {"022wasted@gmail.com"}  # 이걸 네 관리자 이메일로 바꿔라
+ADMIN_EMAILS = {"022wasted@gmail.com"}
 
 
 # =======================
