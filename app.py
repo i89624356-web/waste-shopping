@@ -17,6 +17,9 @@ from flask import (
 
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+import secrets
+import smtplib
+from email.mime.text import MIMEText
 
 # =======================
 # 기본 설정
@@ -47,7 +50,7 @@ def allowed_file(filename: str) -> bool:
 
 
 # 관리자 이메일 목록 (여기에 있는 이메일로 가입하면 관리자 취급)
-ADMIN_EMAILS = {"i89624356@gmail.com"}  # 이걸 네 관리자 이메일로 바꿔라
+ADMIN_EMAILS = {"022wasted@gmail.com"}  # 이걸 네 관리자 이메일로 바꿔라
 
 
 # =======================
