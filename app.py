@@ -1,7 +1,9 @@
 import os
 import json
-import sqlite3
 from datetime import datetime
+
+import psycopg2
+import psycopg2.extras
 
 from flask import (
     Flask,
@@ -13,7 +15,6 @@ from flask import (
     g,
     flash,
     abort,
-    send_from_directory,
 )
 
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -38,10 +39,13 @@ app.secret_key = "dev-secret-key-change-this"
 
 PRODUCT_FILE = os.path.join(BASE_DIR, "products.json")
 
-# DB 경로: 환경변수 SHOP_DB_PATH가 있으면 그걸 쓰고,
-# 없으면 기본값으로 프로젝트 폴더 안의 shop.db 사용
-DEFAULT_DB_PATH = os.path.join(BASE_DIR, "shop.db")
-DB_PATH = os.environ.get("SHOP_DB_PATH", DEFAULT_DB_PATH)
+# PostgreSQL 연결 문자열 (Neon / Render 환경변수에서 읽기)
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError(
+        "환경변수 DATABASE_URL 이 설정되어 있지 않습니다. "
+        "Neon의 Postgres connection string을 Render Environment에 DATABASE_URL로 넣어주세요."
+    )
 
 # 이미지 업로드 설정
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "static", "uploads")
@@ -59,12 +63,14 @@ ADMIN_EMAILS = {"022wasted@gmail.com"}
 
 
 # =======================
-# DB 관련 함수
+# DB 관련 함수 (PostgreSQL)
 # =======================
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(DB_PATH)
-        g.db.row_factory = sqlite3.Row
+        # psycopg2 기본 연결
+        conn = psycopg2.connect(DATABASE_URL)
+        conn.autocommit = False  # 명시적으로 commit 호출
+        g.db = conn
     return g.db
 
 
@@ -76,14 +82,15 @@ def close_db(exception):
 
 
 def init_db():
-    """users, inquiries 테이블이 없으면 생성"""
+    """users, inquiries 테이블이 없으면 생성 (PostgreSQL)"""
     db = get_db()
+    cur = db.cursor()
 
     # users 테이블
-    db.execute(
+    cur.execute(
         """
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             email TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
             name TEXT,
@@ -93,10 +100,10 @@ def init_db():
     )
 
     # 고객센터 문의 테이블
-    db.execute(
+    cur.execute(
         """
         CREATE TABLE IF NOT EXISTS inquiries (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             user_id INTEGER NOT NULL,
             email TEXT NOT NULL,
             subject TEXT NOT NULL,
@@ -213,9 +220,10 @@ def register():
             return render_template("register.html")
 
         db = get_db()
+        cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
         # 이메일 중복 체크
-        cur = db.execute("SELECT id FROM users WHERE email = ?", (email,))
+        cur.execute("SELECT id FROM users WHERE email = %s", (email,))
         existing = cur.fetchone()
         if existing:
             flash("이미 가입된 이메일입니다.", "error")
@@ -225,8 +233,9 @@ def register():
         password_hash = generate_password_hash(password)
         now = datetime.now().isoformat(timespec="seconds")
 
-        db.execute(
-            "INSERT INTO users (email, password, name, created_at) VALUES (?, ?, ?, ?)",
+        cur.execute(
+            "INSERT INTO users (email, password, name, created_at) "
+            "VALUES (%s, %s, %s, %s)",
             (email, password_hash, name, now),
         )
         db.commit()
@@ -251,7 +260,8 @@ def login():
         password = request.form.get("password", "")
 
         db = get_db()
-        cur = db.execute("SELECT * FROM users WHERE email = ?", (email,))
+        cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT * FROM users WHERE email = %s", (email,))
         user = cur.fetchone()
 
         if not user:
@@ -297,6 +307,8 @@ def support():
     user_id = session["user_id"]
     user_email = session.get("user_email")
 
+    cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
     # POST: 문의 저장
     if request.method == "POST":
         subject = request.form.get("subject", "").strip()
@@ -306,10 +318,10 @@ def support():
             flash("제목과 내용을 모두 입력하세요.", "error")
         else:
             now = datetime.now().isoformat(timespec="seconds")
-            db.execute(
+            cur.execute(
                 """
                 INSERT INTO inquiries (user_id, email, subject, message, status, created_at)
-                VALUES (?, ?, ?, ?, 'OPEN', ?)
+                VALUES (%s, %s, %s, %s, 'OPEN', %s)
                 """,
                 (user_id, user_email, subject, message, now),
             )
@@ -318,15 +330,16 @@ def support():
             return redirect(url_for("support"))
 
     # GET: 내가 보낸 문의 목록
-    inquiries = db.execute(
+    cur.execute(
         """
         SELECT id, subject, message, status, created_at
         FROM inquiries
-        WHERE user_id = ?
+        WHERE user_id = %s
         ORDER BY created_at DESC
         """,
         (user_id,),
-    ).fetchall()
+    )
+    inquiries = cur.fetchall()
 
     return render_template("support.html", inquiries=inquiries)
 
@@ -361,13 +374,15 @@ def admin_users():
         return redirect(url_for("login"))
 
     db = get_db()
-    users = db.execute(
+    cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
         """
         SELECT id, email, name, created_at
         FROM users
         ORDER BY created_at DESC
         """
-    ).fetchall()
+    )
+    users = cur.fetchall()
 
     return render_template("admin_users.html", users=users)
 
@@ -383,7 +398,9 @@ def admin_inquiries():
         return redirect(url_for("login"))
 
     db = get_db()
-    rows = db.execute(
+    cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    cur.execute(
         """
         SELECT
             i.id,
@@ -397,7 +414,8 @@ def admin_inquiries():
         JOIN users u ON i.user_id = u.id
         ORDER BY i.created_at DESC
         """
-    ).fetchall()
+    )
+    rows = cur.fetchall()
 
     return render_template("admin_inquiries.html", inquiries=rows)
 
@@ -413,7 +431,8 @@ def admin_inquiry_detail(inquiry_id):
         return redirect(url_for("login"))
 
     db = get_db()
-    row = db.execute(
+    cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
         """
         SELECT
             i.id,
@@ -425,10 +444,11 @@ def admin_inquiry_detail(inquiry_id):
             u.name AS user_name
         FROM inquiries i
         JOIN users u ON i.user_id = u.id
-        WHERE i.id = ?
+        WHERE i.id = %s
         """,
         (inquiry_id,),
-    ).fetchone()
+    )
+    row = cur.fetchone()
 
     if row is None:
         abort(404)
@@ -646,7 +666,7 @@ def product_detail(product_id):
 # 실행부
 # =======================
 
-# 로컬이든 Render든, 모듈이 import될 때 한 번 실행되도록
+# 앱 시작 시 테이블/상품파일 준비
 with app.app_context():
     init_db()
     ensure_products_file()
