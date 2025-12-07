@@ -478,33 +478,38 @@ pre.inquiry-text {
     text-align: center;
 }
 
-/* 관리자 페이지 버튼 스타일 */
+/* 관리자 페이지 버튼 정렬 */
 .admin-actions {
     display: flex;
     flex-direction: row;
-    gap: 8px;
     align-items: center;
+    gap: 14px;
+    /* ★ 버튼 간격 넓히기 */
+    padding-right: 6px;
+    /* 오른쪽 테이블 여백 */
 }
 
-/* 수정 버튼: 더 작게 */
+/* 수정 버튼 */
 .edit-btn {
     background: #111;
     color: white;
-    padding: 6px 14px;
+    padding: 6px 16px;
     font-size: 0.85rem;
     border-radius: 6px;
     text-decoration: none;
     display: inline-block;
+    margin-right: 4px;
+    /* ★ 버튼 오른쪽 살짝 띄움 */
 }
 
-/* 삭제 버튼: 휴지통 아이콘 */
+/* 삭제 아이콘 버튼 */
 .delete-icon-btn {
     background: none;
     border: none;
     cursor: pointer;
-    padding: 0;
-    width: 28px;
-    height: 28px;
+    padding: 2px;
+    width: 30px;
+    height: 30px;
     display: flex;
     justify-content: center;
     align-items: center;
