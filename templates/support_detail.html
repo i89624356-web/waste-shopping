@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}내 문의 상세 | MY BRAND{% endblock %}
+
+{% block content %}
+<section class="admin-header">
+    <h1 class="admin-title">내 문의 상세</h1>
+</section>
+
+<section class="admin-table-wrap">
+    <table class="admin-table">
+        <tbody>
+            <tr>
+                <th style="width: 160px;">제목</th>
+                <td>{{ inquiry.subject }}</td>
+            </tr>
+            <tr>
+                <th>상태</th>
+                <td>{{ inquiry.status }}</td>
+            </tr>
+            <tr>
+                <th>작성일</th>
+                <td>{{ inquiry.created_at }}</td>
+            </tr>
+            <tr>
+                <th>문의 내용</th>
+                <td>
+                    <pre class="inquiry-text" style="white-space: pre-wrap; margin: 0;">
+{{ inquiry.message }}
+          </pre>
+                </td>
+            </tr>
+            <tr>
+                <th>관리자 답변</th>
+                <td>
+                    {% if inquiry.admin_reply %}
+                    <pre class="inquiry-text" style="white-space: pre-wrap; margin: 0;">
+{{ inquiry.admin_reply }}
+            </pre>
+                    {% if inquiry.replied_at %}
+                    <p class="helper-text" style="margin-top: 4px;">
+                        답변 일시: {{ inquiry.replied_at }}
+                    </p>
+                    {% endif %}
+                    {% else %}
+                    <span class="helper-text">아직 등록된 답변이 없습니다.</span>
+                    {% endif %}
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div style="margin-top: 16px;">
+        <a href="{{ url_for('support') }}" class="admin-button">← 내 문의 목록으로</a>
+    </div>
+</section>
+{% endblock %}

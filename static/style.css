@@ -445,6 +445,12 @@ pre.inquiry-text {
     /* 기존 pre-wrap 유지 */
 }
 
+pre.inquiry-text {
+    font-family: inherit;
+    font-size: inherit;
+    line-height: 1.4;
+}
+
 /* 반응형 */
 @media (max-width: 768px) {
     .product-detail-main {

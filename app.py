@@ -308,7 +308,6 @@ def logout():
 # ============================================
 @app.route("/support", methods=["GET", "POST"])
 def support():
-    # 로그인 안 했으면 로그인 페이지로
     if not session.get("user_id"):
         flash("로그인이 필요한 서비스입니다.", "error")
         return redirect(url_for("login"))
@@ -319,7 +318,7 @@ def support():
 
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    # POST: 문의 저장
+    # POST: 문의 저장 (기존 코드 그대로)
     if request.method == "POST":
         subject = request.form.get("subject", "").strip()
         message = request.form.get("message", "").strip()
@@ -328,7 +327,8 @@ def support():
             flash("제목과 내용을 모두 입력하세요.", "error")
         else:
             now = datetime.now().isoformat(timespec="seconds")
-            cur.execute(
+            cur2 = db.cursor()
+            cur2.execute(
                 """
                 INSERT INTO inquiries (user_id, email, subject, message, status, created_at)
                 VALUES (%s, %s, %s, %s, 'OPEN', %s)
@@ -339,10 +339,11 @@ def support():
             flash("문의가 접수되었습니다.", "success")
             return redirect(url_for("support"))
 
-    # GET: 내가 보낸 문의 목록
+    # GET: 내가 보낸 문의 목록 (관리자 답변까지 같이 가져오기)
     cur.execute(
         """
-        SELECT id, subject, message, status, created_at, admin_reply, replied_at
+        SELECT id, subject, status, created_at,
+               admin_reply, replied_at
         FROM inquiries
         WHERE user_id = %s
         ORDER BY created_at DESC
@@ -352,6 +353,44 @@ def support():
     inquiries = cur.fetchall()
 
     return render_template("support.html", inquiries=inquiries)
+
+
+# ============================================
+# 라우트: 사용자 - 내 문의 상세 보기
+# ============================================
+@app.route("/support/<int:inquiry_id>")
+def support_detail(inquiry_id):
+    if not session.get("user_id"):
+        flash("로그인이 필요한 서비스입니다.", "error")
+        return redirect(url_for("login"))
+
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    user_id = session["user_id"]
+
+    # 내가 쓴 문의만 조회 가능하게 (다른 사람 문의는 404)
+    cur.execute(
+        """
+        SELECT
+            id,
+            subject,
+            message,
+            status,
+            created_at,
+            admin_reply,
+            replied_at
+        FROM inquiries
+        WHERE id = %s AND user_id = %s
+        """,
+        (inquiry_id, user_id),
+    )
+    inquiry = cur.fetchone()
+
+    if inquiry is None:
+        abort(404)
+
+    return render_template("support_detail.html", inquiry=inquiry)
 
 
 # =======================
