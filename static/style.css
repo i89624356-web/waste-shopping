@@ -464,6 +464,20 @@ pre.inquiry-text {
     font-size: 1.1rem;
 }
 
+.admin-actions {
+    display: flex;
+    flex-direction: row;
+    /* 세로로 정렬 (원하면 row로 바꿔도 됨) */
+    gap: 6px;
+    align-items: stretch;
+}
+
+.admin-actions .admin-button,
+.admin-actions .admin-delete-button {
+    width: 100%;
+    text-align: center;
+}
+
 /* 반응형 */
 @media (max-width: 768px) {
     .product-detail-main {

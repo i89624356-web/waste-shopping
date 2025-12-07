@@ -34,7 +34,7 @@
                 <td>{{ p.id }}</td>
                 <td>
                     <div class="admin-thumb">
-                        <img src="{{ p.image_url }}" alt="{{ p.name }}">
+                        <img src="{{ url_for('product_image', product_id=p.id) }}" alt="{{ p.name }}">
                     </div>
                 </td>
                 <td class="admin-text-cell">

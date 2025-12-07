@@ -16,6 +16,7 @@ from flask import (
     flash,
     abort,
     jsonify,
+    Response,
 )
 
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -149,6 +150,16 @@ def init_db():
         "UPDATE products SET sort_order = id WHERE sort_order IS NULL"
     )
 
+    # 이미지 바이너리 + MIME 타입
+    cur.execute(
+        "ALTER TABLE products "
+        "ADD COLUMN IF NOT EXISTS image_data BYTEA"
+    )
+    cur.execute(
+        "ALTER TABLE products "
+        "ADD COLUMN IF NOT EXISTS image_mime TEXT"
+    )
+
     db.commit()
 
     # products 테이블이 비어 있고, products.json 이 있으면 한번만 마이그레이션
@@ -243,11 +254,12 @@ def db_get_product(product_id: int):
     return cur.fetchone()
 
 
-def db_create_product(name, price, image_url, status, category, description):
+def db_create_product(name, price, image_url, status, category, description,
+                      image_data=None, image_mime=None):
     db = get_db()
     cur = db.cursor()
 
-    # 현재 최대 sort_order 구해서 그 뒤에 붙이기
+    # 정렬용 sort_order
     cur.execute("SELECT COALESCE(MAX(sort_order), 0) FROM products")
     max_order = cur.fetchone()[0]
     new_order = max_order + 1
@@ -255,34 +267,60 @@ def db_create_product(name, price, image_url, status, category, description):
     now = datetime.now().isoformat(timespec="seconds")
     cur.execute(
         """
-        INSERT INTO products (name, price, image_url, status, category, description, created_at, sort_order)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO products (
+            name, price, image_url, status, category, description,
+            created_at, sort_order, image_data, image_mime
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id
         """,
-        (name, price, image_url, status, category, description, now, new_order),
+        (name, price, image_url, status, category, description,
+         now, new_order, image_data, image_mime),
     )
     new_id = cur.fetchone()[0]
     db.commit()
     return new_id
-    jsonify,
 
 
-def db_update_product(product_id, name, price, image_url, status, category, description):
+def db_update_product(product_id, name, price, image_url, status, category, description,
+                      image_data=None, image_mime=None):
     db = get_db()
     cur = db.cursor()
-    cur.execute(
-        """
-        UPDATE products
-        SET name = %s,
-            price = %s,
-            image_url = %s,
-            status = %s,
-            category = %s,
-            description = %s
-        WHERE id = %s
-        """,
-        (name, price, image_url, status, category, description, product_id),
-    )
+
+    if image_data is not None and image_mime is not None:
+        # 새 이미지까지 포함해서 변경
+        cur.execute(
+            """
+            UPDATE products
+            SET name = %s,
+                price = %s,
+                image_url = %s,
+                status = %s,
+                category = %s,
+                description = %s,
+                image_data = %s,
+                image_mime = %s
+            WHERE id = %s
+            """,
+            (name, price, image_url, status, category, description,
+             image_data, image_mime, product_id),
+        )
+    else:
+        # 텍스트 정보만 변경 (이미지는 그대로 유지)
+        cur.execute(
+            """
+            UPDATE products
+            SET name = %s,
+                price = %s,
+                image_url = %s,
+                status = %s,
+                category = %s,
+                description = %s
+            WHERE id = %s
+            """,
+            (name, price, image_url, status, category, description, product_id),
+        )
+
     db.commit()
 
 
@@ -696,25 +734,18 @@ def admin_product_new():
             flash("가격은 숫자로 입력하세요.", "error")
             return render_template("admin_product_new.html", categories=categories)
 
-        # 이미지 파일
         image_file = request.files.get("image")
+        # 예전 필드 호환용. 굳이 안 써도 되지만 남겨두자.
         image_url = "https://via.placeholder.com/600x800?text=PRODUCT"
+        image_data = None
+        image_mime = None
 
         if image_file and image_file.filename:
-            if not allowed_file(image_file.filename):
-                flash(
-                    "이미지 파일(png, jpg, jpeg, gif, webp)만 업로드 가능합니다.",
-                    "error",
-                )
-                return render_template("admin_product_new.html", categories=categories)
-
-            # 새 id를 몰라도 되지만, 파일명에 시간/랜덤을 붙이는 게 안전
-            filename = secure_filename(image_file.filename)
-            filename = f"{datetime.now().timestamp():.0f}_{filename}"
-            save_path = os.path.join(UPLOAD_FOLDER, filename)
-            image_file.save(save_path)
-
-            image_url = "/static/uploads/" + filename
+            # 파일 내용을 그대로 읽어서 DB에 넣기
+            image_data = image_file.read()
+            image_mime = image_file.mimetype or "image/jpeg"
+            # image_url은 일단 빈 문자열로 두거나 placeholder 유지
+            image_url = ""
 
         new_id = db_create_product(
             name=name,
@@ -723,6 +754,8 @@ def admin_product_new():
             status=status,
             category=category,
             description=description,
+            image_data=image_data,
+            image_mime=image_mime,
         )
 
         flash(f"새 상품이 추가되었습니다. (ID: {new_id})", "success")
@@ -787,26 +820,16 @@ def admin_product_edit(product_id):
             )
 
         image_file = request.files.get("image")
-        image_url = target["image_url"]
+        # 기존 image_url 유지 (사실 이제 의미는 거의 없음)
+        image_url = target.get("image_url", "") or ""
+
+        image_data = None
+        image_mime = None
 
         if image_file and image_file.filename:
-            if not allowed_file(image_file.filename):
-                flash(
-                    "이미지 파일(png, jpg, jpeg, gif, webp)만 업로드 가능합니다.",
-                    "error",
-                )
-                return render_template(
-                    "admin_product_edit.html",
-                    product=target,
-                    categories=categories,
-                )
-
-            filename = secure_filename(image_file.filename)
-            filename = f"{product_id}_{filename}"
-            save_path = os.path.join(UPLOAD_FOLDER, filename)
-            image_file.save(save_path)
-
-            image_url = "/static/uploads/" + filename
+            image_data = image_file.read()
+            image_mime = image_file.mimetype or "image/jpeg"
+            image_url = ""
 
         db_update_product(
             product_id=product_id,
@@ -816,12 +839,13 @@ def admin_product_edit(product_id):
             status=status,
             category=category,
             description=description or "",
+            image_data=image_data,
+            image_mime=image_mime,
         )
 
         flash("상품 정보가 수정되었습니다.", "success")
         return redirect(url_for("admin_products"))
 
-    # GET
     return render_template(
         "admin_product_edit.html",
         product=target,
@@ -872,6 +896,32 @@ def product_detail(product_id):
         abort(404)
 
     return render_template("product_detail.html", product=target)
+
+
+@app.route("/product_image/<int:product_id>")
+def product_image(product_id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        "SELECT image_data, image_mime, image_url FROM products WHERE id = %s",
+        (product_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        abort(404)
+
+    image_data, image_mime, image_url = row
+
+    if image_data:
+        # DB에 저장된 바이너리 이미지 사용
+        return Response(image_data, mimetype=image_mime or "image/jpeg")
+
+    # 바이너리가 없고 image_url만 있을 때는 그쪽으로 redirect
+    if image_url:
+        return redirect(image_url)
+
+    # 둘 다 없으면 404
+    abort(404)
 
 
 # =======================
