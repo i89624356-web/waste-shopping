@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}ADMIN | INQUIRIES{% endblock %}
+
+{% block content %}
+<section class="admin-header">
+    <h1 class="admin-title">ADMIN · INQUIRIES</h1>
+</section>
+
+<section class="admin-table-wrap">
+    {% if inquiries %}
+    <table class="admin-table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>사용자</th>
+                <th>이메일</th>
+                <th>제목 / 내용</th>
+                <th>상태</th>
+                <th>작성일</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for q in inquiries %}
+            <tr>
+                <td>{{ q.id }}</td>
+                <td>{{ q.user_name or '-' }}</td>
+                <td>{{ q.user_email }}</td>
+                <td class="admin-text-cell">
+                    <details>
+                        <summary>{{ q.subject }}</summary>
+                        <pre style="white-space: pre-wrap; margin-top: 4px;">{{ q.message }}</pre>
+                    </details>
+                </td>
+                <td>{{ q.status }}</td>
+                <td>{{ q.created_at }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="helper-text">등록된 문의가 없습니다.</p>
+    {% endif %}
+</section>
+{% endblock %}

@@ -72,8 +72,10 @@ def close_db(exception):
 
 
 def init_db():
-    """users 테이블이 없으면 생성"""
+    """users, inquiries 테이블이 없으면 생성"""
     db = get_db()
+
+    # users 테이블 (기존 그대로)
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -85,6 +87,22 @@ def init_db():
         )
         """
     )
+
+    # 새로 추가할 고객센터 테이블
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS inquiries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            email TEXT NOT NULL,
+            subject TEXT NOT NULL,
+            message TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'OPEN',
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+
     db.commit()
 
 
@@ -261,6 +279,50 @@ def logout():
     return redirect(url_for("shop_list"))
 
 
+@app.route("/support", methods=["GET", "POST"])
+def support():
+    # 로그인 안 했으면 로그인 페이지로
+    if not session.get("user_id"):
+        flash("로그인이 필요한 서비스입니다.", "error")
+        return redirect(url_for("login"))
+
+    db = get_db()
+    user_id = session["user_id"]
+    user_email = session.get("user_email")
+
+    if request.method == "POST":
+        subject = request.form.get("subject", "").strip()
+        message = request.form.get("message", "").strip()
+
+        if not subject or not message:
+            flash("제목과 내용을 모두 입력하세요.", "error")
+        else:
+            now = datetime.now().isoformat(timespec="seconds")
+            db.execute(
+                """
+                INSERT INTO inquiries (user_id, email, subject, message, status, created_at)
+                VALUES (?, ?, ?, ?, 'OPEN', ?)
+                """,
+                (user_id, user_email, subject, message, now),
+            )
+            db.commit()
+            flash("문의가 접수되었습니다.", "success")
+            return redirect(url_for("support"))
+
+    # 내가 보낸 문의 목록
+    inquiries = db.execute(
+        """
+        SELECT id, subject, message, status, created_at
+        FROM inquiries
+        WHERE user_id = ?
+        ORDER BY created_at DESC
+        """,
+        (user_id,),
+    ).fetchall()
+
+    return render_template("support.html", inquiries=inquiries)
+
+
 # =======================
 # 라우트: 관리자 - 상품 목록
 # =======================
@@ -278,6 +340,33 @@ def admin_products():
         products=products,
         categories=categories,
     )
+
+
+@app.route("/admin/inquiries")
+def admin_inquiries():
+    # 관리자 체크
+    if not session.get("user_id") or not is_admin():
+        flash("관리자 권한이 필요합니다.", "error")
+        return redirect(url_for("login"))
+
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT
+            i.id,
+            i.subject,
+            i.message,
+            i.status,
+            i.created_at,
+            u.email AS user_email,
+            u.name AS user_name
+        FROM inquiries i
+        JOIN users u ON i.user_id = u.id
+        ORDER BY i.created_at DESC
+        """
+    ).fetchall()
+
+    return render_template("admin_inquiries.html", inquiries=rows)
 
 
 # =======================

@@ -18,15 +18,17 @@
 
             <nav class="nav">
                 {% if is_admin %}
-                    <a href="{{ url_for('admin_products') }}" class="nav-link">ADMIN</a>
+                <a href="{{ url_for('admin_products') }}" class="nav-link">ADMIN</a>
+                <a href="{{ url_for('admin_inquiries') }}" class="nav-link">INQUIRIES</a>
                 {% endif %}
 
                 {% if current_user_email %}
-                    <span class="nav-user">{{ current_user_email }}</span>
-                    <a href="{{ url_for('logout') }}" class="nav-link">LOGOUT</a>
+                <a href="{{ url_for('support') }}" class="nav-link">SUPPORT</a>
+                <span class="nav-user">{{ current_user_email }}</span>
+                <a href="{{ url_for('logout') }}" class="nav-link">LOGOUT</a>
                 {% else %}
-                    <a href="{{ url_for('login') }}" class="nav-link">LOGIN</a>
-                    <a href="{{ url_for('register') }}" class="nav-link">SIGN UP</a>
+                <a href="{{ url_for('login') }}" class="nav-link">LOGIN</a>
+                <a href="{{ url_for('register') }}" class="nav-link">SIGN UP</a>
                 {% endif %}
             </nav>
         </div>

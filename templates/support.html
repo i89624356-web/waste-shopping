@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}SUPPORT | MY BRAND{% endblock %}
+
+{% block content %}
+<section class="auth-wrapper">
+    <h1 class="auth-title">CUSTOMER SUPPORT</h1>
+
+    <form method="post" class="auth-form">
+        <label class="auth-label">
+            제목
+            <input type="text" name="subject" required class="auth-input" placeholder="문의 제목을 입력하세요">
+        </label>
+
+        <label class="auth-label">
+            내용
+            <textarea name="message" rows="6" required class="auth-input" placeholder="문의 내용을 자세히 적어주세요"></textarea>
+        </label>
+
+        <button type="submit" class="auth-button">문의 보내기</button>
+    </form>
+</section>
+
+<section class="admin-table-wrap" style="margin-top: 32px;">
+    <h2 class="admin-title" style="margin-bottom: 8px;">내 문의 내역</h2>
+
+    {% if inquiries %}
+    <table class="admin-table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>제목</th>
+                <th>상태</th>
+                <th>작성일</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for q in inquiries %}
+            <tr>
+                <td>{{ q.id }}</td>
+                <td class="admin-text-cell">
+                    {{ q.subject }}
+                </td>
+                <td>{{ q.status }}</td>
+                <td>{{ q.created_at }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="helper-text">아직 보낸 문의가 없습니다.</p>
+    {% endif %}
+</section>
+{% endblock %}
