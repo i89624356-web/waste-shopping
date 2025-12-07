@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}ADMIN | USERS{% endblock %}
+
+{% block content %}
+<section class="admin-header">
+    <h1 class="admin-title">ADMIN · USERS</h1>
+</section>
+
+<section class="admin-table-wrap">
+    {% if users %}
+    <table class="admin-table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>이름</th>
+                <th>이메일</th>
+                <th>가입일</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for u in users %}
+            <tr>
+                <td>{{ u.id }}</td>
+                <td>{{ u.name or '-' }}</td>
+                <td>{{ u.email }}</td>
+                <td>{{ u.created_at }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="helper-text">등록된 회원이 없습니다.</p>
+    {% endif %}
+</section>
+{% endblock %}

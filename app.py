@@ -351,6 +351,28 @@ def admin_products():
 
 
 # ============================================
+# 라우트: 관리자 - 회원 목록 조회
+# ============================================
+@app.route("/admin/users")
+def admin_users():
+    # 관리자 권한 체크
+    if not session.get("user_id") or not is_admin():
+        flash("관리자 권한이 필요합니다.", "error")
+        return redirect(url_for("login"))
+
+    db = get_db()
+    users = db.execute(
+        """
+        SELECT id, email, name, created_at
+        FROM users
+        ORDER BY created_at DESC
+        """
+    ).fetchall()
+
+    return render_template("admin_users.html", users=users)
+
+
+# ============================================
 # 라우트: 관리자 - 고객센터 문의 목록 조회
 # ============================================
 @app.route("/admin/inquiries")
@@ -507,8 +529,6 @@ def admin_product_delete(product_id):
 # =======================
 # 라우트: 관리자 - 상품 수정
 # =======================
-
-
 @app.route("/admin/products/<int:product_id>/edit", methods=["GET", "POST"])
 def admin_product_edit(product_id):
     if not session.get("user_id") or not is_admin():

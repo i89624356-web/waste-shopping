@@ -18,7 +18,8 @@
 
             <nav class="nav">
                 {% if is_admin %}
-                <a href="{{ url_for('admin_products') }}" class="nav-link">ADMIN</a>
+                <a href="{{ url_for('admin_products') }}" class="nav-link">PRODUCTS</a>
+                <a href="{{ url_for('admin_users') }}" class="nav-link">USERS</a>
                 <a href="{{ url_for('admin_inquiries') }}" class="nav-link">INQUIRIES</a>
                 {% endif %}
 
