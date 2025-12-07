@@ -19,9 +19,6 @@ from flask import (
 
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-import secrets
-import smtplib
-from email.mime.text import MIMEText
 
 # =======================
 # 기본 설정 + 경로 설정
@@ -37,8 +34,6 @@ app = Flask(
 # 세션에 쓸 비밀키 (실서비스에서는 환경변수로 빼야 함)
 app.secret_key = "dev-secret-key-change-this"
 
-PRODUCT_FILE = os.path.join(BASE_DIR, "products.json")
-
 # PostgreSQL 연결 문자열 (Neon / Render 환경변수에서 읽기)
 DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
@@ -46,6 +41,9 @@ if not DATABASE_URL:
         "환경변수 DATABASE_URL 이 설정되어 있지 않습니다. "
         "Neon의 Postgres connection string을 Render Environment에 DATABASE_URL로 넣어주세요."
     )
+
+# 예전 products.json (있으면 초기 데이터로만 사용)
+PRODUCT_FILE = os.path.join(BASE_DIR, "products.json")
 
 # 이미지 업로드 설정
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "static", "uploads")
@@ -67,7 +65,6 @@ ADMIN_EMAILS = {"022wasted@gmail.com"}
 # =======================
 def get_db():
     if "db" not in g:
-        # psycopg2 기본 연결
         conn = psycopg2.connect(DATABASE_URL)
         conn.autocommit = False  # 명시적으로 commit 호출
         g.db = conn
@@ -82,11 +79,11 @@ def close_db(exception):
 
 
 def init_db():
-    """users, inquiries 테이블이 없으면 생성 (PostgreSQL)"""
+    """users, inquiries, products 테이블 생성 + inquiries 컬럼 보정"""
     db = get_db()
     cur = db.cursor()
 
-    # users 테이블
+    # ---------- users ----------
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -99,7 +96,7 @@ def init_db():
         """
     )
 
-    # 고객센터 문의 테이블
+    # ---------- inquiries ----------
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS inquiries (
@@ -114,7 +111,7 @@ def init_db():
         """
     )
 
-    # 이미 존재하는 테이블에 컬럼이 없을 수도 있으니, 안전하게 ALTER TABLE
+    # inquiries 보조 컬럼 (있으면 추가 안 됨)
     cur.execute(
         "ALTER TABLE inquiries "
         "ADD COLUMN IF NOT EXISTS admin_reply TEXT"
@@ -124,35 +121,157 @@ def init_db():
         "ADD COLUMN IF NOT EXISTS replied_at TEXT"
     )
 
+    # ---------- products ----------
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS products (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            price INTEGER NOT NULL,
+            image_url TEXT NOT NULL,
+            status TEXT NOT NULL,
+            category TEXT NOT NULL,
+            description TEXT,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+
+    db.commit()
+
+    # products 테이블이 비어 있고, products.json 이 있으면 한번만 마이그레이션
+    migrate_products_from_json_if_needed()
+
+
+def migrate_products_from_json_if_needed():
+    """DB products 테이블이 비어 있고 products.json이 있으면 한 번만 옮겨담기"""
+    db = get_db()
+    cur = db.cursor()
+
+    # 이미 데이터가 있으면 패스
+    cur.execute("SELECT COUNT(*) FROM products")
+    count = cur.fetchone()[0]
+    if count > 0:
+        return
+
+    if not os.path.exists(PRODUCT_FILE):
+        return
+
+    # JSON 읽어서 insert
+    with open(PRODUCT_FILE, "r", encoding="utf-8") as f:
+        try:
+            products = json.load(f)
+        except Exception:
+            products = []
+
+    if not products:
+        return
+
+    now = datetime.now().isoformat(timespec="seconds")
+    for p in products:
+        name = p.get("name", "")
+        price = int(p.get("price", 0))
+        image_url = p.get("image_url") or "https://via.placeholder.com/600x800?text=PRODUCT"
+        status = p.get("status") or "IN_STOCK"
+        category = p.get("category") or "TOP"
+        description = p.get("description") or ""
+
+        cur.execute(
+            """
+            INSERT INTO products (name, price, image_url, status, category, description, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (name, price, image_url, status, category, description, now),
+        )
+
     db.commit()
 
 
 # =======================
-# 상품 데이터 (products.json)
+# products 헬퍼 함수 (DB)
 # =======================
-def ensure_products_file():
-    """products.json이 없으면 빈 리스트로 생성"""
-    if not os.path.exists(PRODUCT_FILE):
-        with open(PRODUCT_FILE, "w", encoding="utf-8") as f:
-            json.dump([], f, ensure_ascii=False, indent=2)
+def db_get_products(category: str | None = None):
+    """카테고리 필터 포함한 상품 목록"""
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    if category and category != "ALL":
+        cur.execute(
+            """
+            SELECT id, name, price, image_url, status, category, description
+            FROM products
+            WHERE category = %s
+            ORDER BY id DESC
+            """,
+            (category,),
+        )
+    else:
+        cur.execute(
+            """
+            SELECT id, name, price, image_url, status, category, description
+            FROM products
+            ORDER BY id DESC
+            """
+        )
+
+    return cur.fetchall()
 
 
-def load_products():
-    ensure_products_file()
-    with open(PRODUCT_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    return data
+def db_get_product(product_id: int):
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        """
+        SELECT id, name, price, image_url, status, category, description
+        FROM products
+        WHERE id = %s
+        """,
+        (product_id,),
+    )
+    return cur.fetchone()
 
 
-def save_products(products):
-    with open(PRODUCT_FILE, "w", encoding="utf-8") as f:
-        json.dump(products, f, ensure_ascii=False, indent=2)
+def db_create_product(name, price, image_url, status, category, description):
+    db = get_db()
+    cur = db.cursor()
+    now = datetime.now().isoformat(timespec="seconds")
+    cur.execute(
+        """
+        INSERT INTO products (name, price, image_url, status, category, description, created_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
+        """,
+        (name, price, image_url, status, category, description, now),
+    )
+    new_id = cur.fetchone()[0]
+    db.commit()
+    return new_id
 
 
-def next_product_id(products):
-    if not products:
-        return 1
-    return max(p.get("id", 0) for p in products) + 1
+def db_update_product(product_id, name, price, image_url, status, category, description):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute(
+        """
+        UPDATE products
+        SET name = %s,
+            price = %s,
+            image_url = %s,
+            status = %s,
+            category = %s,
+            description = %s
+        WHERE id = %s
+        """,
+        (name, price, image_url, status, category, description, product_id),
+    )
+    db.commit()
+
+
+def db_delete_product(product_id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("DELETE FROM products WHERE id = %s", (product_id,))
+    db.commit()
 
 
 # =======================
@@ -178,18 +297,13 @@ def inject_user():
 @app.route("/shop")
 def shop_list():
     category = request.args.get("category", "ALL")
-    products = load_products()
-
-    if category != "ALL":
-        filtered = [p for p in products if p.get("category") == category]
-    else:
-        filtered = products
+    products = db_get_products(category)
 
     categories = ["ALL", "OUTER", "TOP", "BOTTOM", "ACCESSORIES"]
 
     return render_template(
         "shop_list.html",
-        products=filtered,
+        products=products,
         current_category=category,
         categories=categories,
     )
@@ -206,7 +320,6 @@ def index():
 # =======================
 @app.route("/register", methods=["GET", "POST"])
 def register():
-    # 이미 로그인 상태면 리스트로 보냄
     if session.get("user_id"):
         return redirect(url_for("shop_list"))
 
@@ -239,11 +352,11 @@ def register():
             flash("이미 가입된 이메일입니다.", "error")
             return render_template("register.html")
 
-        # 비밀번호 해시 후 저장
         password_hash = generate_password_hash(password)
         now = datetime.now().isoformat(timespec="seconds")
 
-        cur.execute(
+        cur2 = db.cursor()
+        cur2.execute(
             "INSERT INTO users (email, password, name, created_at) "
             "VALUES (%s, %s, %s, %s)",
             (email, password_hash, name, now),
@@ -253,7 +366,6 @@ def register():
         flash("회원가입이 완료되었습니다. 로그인 해주세요.", "success")
         return redirect(url_for("login"))
 
-    # GET 요청
     return render_template("register.html")
 
 
@@ -282,7 +394,6 @@ def login():
             flash("비밀번호가 올바르지 않습니다.", "error")
             return render_template("login.html")
 
-        # 로그인 성공 → 세션 저장
         session["user_id"] = user["id"]
         session["user_email"] = user["email"]
         session["user_name"] = user["name"]
@@ -318,7 +429,7 @@ def support():
 
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    # POST: 문의 저장 (기존 코드 그대로)
+    # POST: 문의 저장
     if request.method == "POST":
         subject = request.form.get("subject", "").strip()
         message = request.form.get("message", "").strip()
@@ -339,11 +450,10 @@ def support():
             flash("문의가 접수되었습니다.", "success")
             return redirect(url_for("support"))
 
-    # GET: 내가 보낸 문의 목록 (관리자 답변까지 같이 가져오기)
+    # GET: 내가 보낸 문의 목록
     cur.execute(
         """
-        SELECT id, subject, status, created_at,
-               admin_reply, replied_at
+        SELECT id, subject, status, created_at, admin_reply, replied_at
         FROM inquiries
         WHERE user_id = %s
         ORDER BY created_at DESC
@@ -369,7 +479,6 @@ def support_detail(inquiry_id):
 
     user_id = session["user_id"]
 
-    # 내가 쓴 문의만 조회 가능하게 (다른 사람 문의는 404)
     cur.execute(
         """
         SELECT
@@ -402,7 +511,7 @@ def admin_products():
         flash("관리자 권한이 필요합니다.", "error")
         return redirect(url_for("login"))
 
-    products = load_products()
+    products = db_get_products(category=None)
     categories = ["OUTER", "TOP", "BOTTOM", "ACCESSORIES"]
 
     return render_template(
@@ -412,12 +521,11 @@ def admin_products():
     )
 
 
-# ============================================
+# =======================
 # 라우트: 관리자 - 회원 목록 조회
-# ============================================
+# =======================
 @app.route("/admin/users")
 def admin_users():
-    # 관리자 권한 체크
     if not session.get("user_id") or not is_admin():
         flash("관리자 권한이 필요합니다.", "error")
         return redirect(url_for("login"))
@@ -436,12 +544,11 @@ def admin_users():
     return render_template("admin_users.html", users=users)
 
 
-# ============================================
+# =======================
 # 라우트: 관리자 - 고객센터 문의 목록 조회
-# ============================================
+# =======================
 @app.route("/admin/inquiries")
 def admin_inquiries():
-    # 관리자 체크
     if not session.get("user_id") or not is_admin():
         flash("관리자 권한이 필요합니다.", "error")
         return redirect(url_for("login"))
@@ -457,6 +564,8 @@ def admin_inquiries():
             i.message,
             i.status,
             i.created_at,
+            i.admin_reply,
+            i.replied_at,
             u.email AS user_email,
             u.name AS user_name
         FROM inquiries i
@@ -469,32 +578,25 @@ def admin_inquiries():
     return render_template("admin_inquiries.html", inquiries=rows)
 
 
-# ============================================
-# 라우트: 관리자 - 특정 문의 상세 보기
-# ============================================
+# =======================
+# 라우트: 관리자 - 특정 문의 상세 보기 + 답변/상태 변경
+# =======================
 @app.route("/admin/inquiries/<int:inquiry_id>", methods=["GET", "POST"])
 def admin_inquiry_detail(inquiry_id):
-    # 관리자 권한 확인
     if not session.get("user_id") or not is_admin():
         flash("관리자 권한이 필요합니다.", "error")
         return redirect(url_for("login"))
 
     db = get_db()
-    # SELECT 때는 dict처럼 쓰고 싶으니까 RealDictCursor 사용
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    # ------------------------
-    # POST 요청: 답변 저장 / 상태 변경
-    # ------------------------
     if request.method == "POST":
         action = request.form.get("action")
         reply_text = request.form.get("admin_reply", "").strip()
         now = datetime.now().isoformat(timespec="seconds")
 
-        # 기본 cursor (dict 필요 없음)
         cur2 = db.cursor()
 
-        # 답변 텍스트가 있으면 admin_reply, replied_at 업데이트
         if reply_text:
             cur2.execute(
                 """
@@ -506,7 +608,6 @@ def admin_inquiry_detail(inquiry_id):
                 (reply_text, now, inquiry_id),
             )
 
-        # action이 close면 상태를 CLOSED로 변경
         if action == "close":
             cur2.execute(
                 """
@@ -521,9 +622,7 @@ def admin_inquiry_detail(inquiry_id):
         flash("문의 답변이 저장되었습니다.", "success")
         return redirect(url_for("admin_inquiry_detail", inquiry_id=inquiry_id))
 
-    # ------------------------
-    # GET 요청: 상세 정보 조회
-    # ------------------------
+    # GET
     cur.execute(
         """
         SELECT
@@ -578,12 +677,9 @@ def admin_product_new():
             flash("가격은 숫자로 입력하세요.", "error")
             return render_template("admin_product_new.html", categories=categories)
 
-        products = load_products()
-        new_id = next_product_id(products)
-
-        # 이미지 파일 받기
+        # 이미지 파일
         image_file = request.files.get("image")
-        image_url = "https://via.placeholder.com/600x800?text=PRODUCT"  # 기본 이미지
+        image_url = "https://via.placeholder.com/600x800?text=PRODUCT"
 
         if image_file and image_file.filename:
             if not allowed_file(image_file.filename):
@@ -593,29 +689,26 @@ def admin_product_new():
                 )
                 return render_template("admin_product_new.html", categories=categories)
 
-            filename = f"{new_id}_" + secure_filename(image_file.filename)
+            # 새 id를 몰라도 되지만, 파일명에 시간/랜덤을 붙이는 게 안전
+            filename = secure_filename(image_file.filename)
+            filename = f"{datetime.now().timestamp():.0f}_{filename}"
             save_path = os.path.join(UPLOAD_FOLDER, filename)
             image_file.save(save_path)
 
             image_url = "/static/uploads/" + filename
 
-        new_product = {
-            "id": new_id,
-            "name": name,
-            "price": price,
-            "image_url": image_url,
-            "status": status,
-            "category": category,
-            "description": description,
-        }
+        new_id = db_create_product(
+            name=name,
+            price=price,
+            image_url=image_url,
+            status=status,
+            category=category,
+            description=description,
+        )
 
-        products.append(new_product)
-        save_products(products)
-
-        flash("새 상품이 추가되었습니다.", "success")
+        flash(f"새 상품이 추가되었습니다. (ID: {new_id})", "success")
         return redirect(url_for("admin_products"))
 
-    # GET 요청
     return render_template("admin_product_new.html", categories=categories)
 
 
@@ -628,15 +721,8 @@ def admin_product_delete(product_id):
         flash("관리자 권한이 필요합니다.", "error")
         return redirect(url_for("login"))
 
-    products = load_products()
-    new_products = [p for p in products if p.get("id") != product_id]
-
-    if len(products) == len(new_products):
-        flash("해당 상품을 찾을 수 없습니다.", "error")
-    else:
-        save_products(new_products)
-        flash("상품이 삭제되었습니다.", "success")
-
+    db_delete_product(product_id)
+    flash("상품이 삭제되었습니다.", "success")
     return redirect(url_for("admin_products"))
 
 
@@ -650,14 +736,7 @@ def admin_product_edit(product_id):
         return redirect(url_for("login"))
 
     categories = ["OUTER", "TOP", "BOTTOM", "ACCESSORIES"]
-    products = load_products()
-
-    # 수정할 상품 찾기
-    target = None
-    for p in products:
-        if p.get("id") == product_id:
-            target = p
-            break
+    target = db_get_product(product_id)
 
     if not target:
         flash("해당 상품을 찾을 수 없습니다.", "error")
@@ -667,12 +746,8 @@ def admin_product_edit(product_id):
         name = request.form.get("name", "").strip()
         price_raw = request.form.get("price", "").strip()
         description = request.form.get("description", "").strip()
-        category = request.form.get("category", "").strip() or target.get(
-            "category", "TOP"
-        )
-        status = request.form.get("status", "").strip() or target.get(
-            "status", "IN_STOCK"
-        )
+        category = request.form.get("category", "").strip() or target["category"]
+        status = request.form.get("status", "").strip() or target["status"]
 
         if not name:
             flash("상품명을 입력하세요.", "error")
@@ -692,9 +767,8 @@ def admin_product_edit(product_id):
                 categories=categories,
             )
 
-        # 이미지 파일(선택) 받기
         image_file = request.files.get("image")
-        image_url = target.get("image_url")
+        image_url = target["image_url"]
 
         if image_file and image_file.filename:
             if not allowed_file(image_file.filename):
@@ -708,26 +782,27 @@ def admin_product_edit(product_id):
                     categories=categories,
                 )
 
-            filename = f"{product_id}_" + secure_filename(image_file.filename)
+            filename = secure_filename(image_file.filename)
+            filename = f"{product_id}_{filename}"
             save_path = os.path.join(UPLOAD_FOLDER, filename)
             image_file.save(save_path)
 
             image_url = "/static/uploads/" + filename
 
-        # 실제 데이터 수정
-        target["name"] = name
-        target["price"] = price
-        target["category"] = category
-        target["status"] = status
-        target["image_url"] = image_url
-        target["description"] = description or target.get("description", "")
-
-        save_products(products)
+        db_update_product(
+            product_id=product_id,
+            name=name,
+            price=price,
+            image_url=image_url,
+            status=status,
+            category=category,
+            description=description or "",
+        )
 
         flash("상품 정보가 수정되었습니다.", "success")
         return redirect(url_for("admin_products"))
 
-    # GET 요청: 기존 데이터 채워진 폼 보여주기
+    # GET
     return render_template(
         "admin_product_edit.html",
         product=target,
@@ -740,17 +815,9 @@ def admin_product_edit(product_id):
 # =======================
 @app.route("/product/<int:product_id>")
 def product_detail(product_id):
-    products = load_products()
-
-    # id가 일치하는 상품 찾기
-    target = None
-    for p in products:
-        if p.get("id") == product_id:
-            target = p
-            break
+    target = db_get_product(product_id)
 
     if not target:
-        # 없는 상품이면 404
         abort(404)
 
     return render_template("product_detail.html", product=target)
@@ -759,11 +826,8 @@ def product_detail(product_id):
 # =======================
 # 실행부
 # =======================
-
-# 앱 시작 시 테이블/상품파일 준비
 with app.app_context():
     init_db()
-    ensure_products_file()
 
 if __name__ == "__main__":
     app.run(debug=True)
