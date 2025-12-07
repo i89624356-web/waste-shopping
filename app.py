@@ -75,7 +75,7 @@ def init_db():
     """users, inquiries 테이블이 없으면 생성"""
     db = get_db()
 
-    # users 테이블 (기존 그대로)
+    # users 테이블
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -88,7 +88,7 @@ def init_db():
         """
     )
 
-    # 새로 추가할 고객센터 테이블
+    # 새로 추가: 고객센터 문의 테이블
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS inquiries (
@@ -571,9 +571,11 @@ def product_detail(product_id):
 # =======================
 # 실행부
 # =======================
+
+# 로컬이든 Render든, 모듈이 import될 때 한 번 실행되도록
+with app.app_context():
+    init_db()
+    ensure_products_file()
+
 if __name__ == "__main__":
-    # 앱 컨텍스트 안에서 DB 및 products 파일 초기화
-    with app.app_context():
-        init_db()
-        ensure_products_file()
     app.run(debug=True)
