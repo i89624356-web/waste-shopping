@@ -435,6 +435,16 @@ textarea.auth-input {
     margin-top: 8px;
 }
 
+pre.inquiry-text {
+    font-family: inherit;
+    /* input과 동일한 글씨체 */
+    font-size: inherit;
+    /* input과 동일한 크기 */
+    line-height: 1.4;
+    white-space: pre-wrap;
+    /* 기존 pre-wrap 유지 */
+}
+
 /* 반응형 */
 @media (max-width: 768px) {
     .product-detail-main {
