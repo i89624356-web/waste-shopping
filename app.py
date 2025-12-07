@@ -1,6 +1,6 @@
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 import psycopg2
 import psycopg2.extras
@@ -21,6 +21,8 @@ from flask import (
 
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+
+KST = timezone(timedelta(hours=9))
 
 # =======================
 # 기본 설정 + 경로 설정
@@ -190,7 +192,7 @@ def migrate_products_from_json_if_needed():
     if not products:
         return
 
-    now = datetime.now().isoformat(timespec="seconds")
+    now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
     for p in products:
         name = p.get("name", "")
         price = int(p.get("price", 0))
@@ -264,7 +266,7 @@ def db_create_product(name, price, image_url, status, category, description,
     max_order = cur.fetchone()[0]
     new_order = max_order + 1
 
-    now = datetime.now().isoformat(timespec="seconds")
+    now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
     cur.execute(
         """
         INSERT INTO products (
@@ -410,7 +412,7 @@ def register():
             return render_template("register.html")
 
         password_hash = generate_password_hash(password)
-        now = datetime.now().isoformat(timespec="seconds")
+        now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
 
         cur2 = db.cursor()
         cur2.execute(
@@ -494,7 +496,7 @@ def support():
         if not subject or not message:
             flash("제목과 내용을 모두 입력하세요.", "error")
         else:
-            now = datetime.now().isoformat(timespec="seconds")
+            now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
             cur2 = db.cursor()
             cur2.execute(
                 """
@@ -650,7 +652,7 @@ def admin_inquiry_detail(inquiry_id):
     if request.method == "POST":
         action = request.form.get("action")
         reply_text = request.form.get("admin_reply", "").strip()
-        now = datetime.now().isoformat(timespec="seconds")
+        now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
 
         cur2 = db.cursor()
 
