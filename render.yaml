@@ -1,9 +1,19 @@
 services:
   - type: web
-    name: my-shop
+    name: waste-shopping
+    env: python
     runtime: python
+
     buildCommand: "pip install -r requirements.txt"
     startCommand: "gunicorn app:app"
+
+    disk:
+      name: shop-data
+      mountPath: /data
+      sizeGB: 1
+
     envVars:
       - key: PYTHON_VERSION
         value: 3.11
+      - key: SHOP_DB_PATH
+        value: /data/shop.db

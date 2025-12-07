@@ -23,7 +23,7 @@ import smtplib
 from email.mime.text import MIMEText
 
 # =======================
-# 기본 설정
+# 기본 설정 + 경로 설정
 # =======================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -37,7 +37,11 @@ app = Flask(
 app.secret_key = "dev-secret-key-change-this"
 
 PRODUCT_FILE = os.path.join(BASE_DIR, "products.json")
-DB_PATH = os.path.join(BASE_DIR, "shop.db")
+
+# DB 경로: 환경변수 SHOP_DB_PATH가 있으면 그걸 쓰고,
+# 없으면 기본값으로 프로젝트 폴더 안의 shop.db 사용
+DEFAULT_DB_PATH = os.path.join(BASE_DIR, "shop.db")
+DB_PATH = os.environ.get("SHOP_DB_PATH", DEFAULT_DB_PATH)
 
 # 이미지 업로드 설정
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "static", "uploads")
@@ -55,13 +59,12 @@ ADMIN_EMAILS = {"022wasted@gmail.com"}
 
 
 # =======================
-# DB 관련 함수 (users)
+# DB 관련 함수
 # =======================
 def get_db():
     if "db" not in g:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row  # dict처럼 사용 가능
-        g.db = conn
+        g.db = sqlite3.connect(DB_PATH)
+        g.db.row_factory = sqlite3.Row
     return g.db
 
 
@@ -89,7 +92,7 @@ def init_db():
         """
     )
 
-    # 새로 추가: 고객센터 문의 테이블
+    # 고객센터 문의 테이블
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS inquiries (
@@ -294,6 +297,7 @@ def support():
     user_id = session["user_id"]
     user_email = session.get("user_email")
 
+    # POST: 문의 저장
     if request.method == "POST":
         subject = request.form.get("subject", "").strip()
         message = request.form.get("message", "").strip()
@@ -313,7 +317,7 @@ def support():
             flash("문의가 접수되었습니다.", "success")
             return redirect(url_for("support"))
 
-    # 내가 보낸 문의 목록
+    # GET: 내가 보낸 문의 목록
     inquiries = db.execute(
         """
         SELECT id, subject, message, status, created_at
@@ -466,7 +470,7 @@ def admin_product_new():
             "image_url": image_url,
             "status": status,
             "category": category,
-            "description": description,  # ★ 설명 추가
+            "description": description,
         }
 
         products.append(new_product)
@@ -503,6 +507,8 @@ def admin_product_delete(product_id):
 # =======================
 # 라우트: 관리자 - 상품 수정
 # =======================
+
+
 @app.route("/admin/products/<int:product_id>/edit", methods=["GET", "POST"])
 def admin_product_edit(product_id):
     if not session.get("user_id") or not is_admin():
@@ -527,8 +533,12 @@ def admin_product_edit(product_id):
         name = request.form.get("name", "").strip()
         price_raw = request.form.get("price", "").strip()
         description = request.form.get("description", "").strip()
-        category = request.form.get("category", "").strip() or target.get("category", "TOP")
-        status = request.form.get("status", "").strip() or target.get("status", "IN_STOCK")
+        category = request.form.get("category", "").strip() or target.get(
+            "category", "TOP"
+        )
+        status = request.form.get("status", "").strip() or target.get(
+            "status", "IN_STOCK"
+        )
 
         if not name:
             flash("상품명을 입력하세요.", "error")
@@ -554,7 +564,10 @@ def admin_product_edit(product_id):
 
         if image_file and image_file.filename:
             if not allowed_file(image_file.filename):
-                flash("이미지 파일(png, jpg, jpeg, gif, webp)만 업로드 가능합니다.", "error")
+                flash(
+                    "이미지 파일(png, jpg, jpeg, gif, webp)만 업로드 가능합니다.",
+                    "error",
+                )
                 return render_template(
                     "admin_product_edit.html",
                     product=target,
