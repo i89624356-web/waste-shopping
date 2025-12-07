@@ -13,6 +13,7 @@ from flask import (
     g,
     flash,
     abort,
+    send_from_directory,
 )
 
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -279,6 +280,9 @@ def logout():
     return redirect(url_for("shop_list"))
 
 
+# ============================================
+# 라우트: 사용자 - 고객센터 문의 작성 및 조회
+# ============================================
 @app.route("/support", methods=["GET", "POST"])
 def support():
     # 로그인 안 했으면 로그인 페이지로
@@ -342,6 +346,9 @@ def admin_products():
     )
 
 
+# ============================================
+# 라우트: 관리자 - 고객센터 문의 목록 조회
+# ============================================
 @app.route("/admin/inquiries")
 def admin_inquiries():
     # 관리자 체크
@@ -367,6 +374,40 @@ def admin_inquiries():
     ).fetchall()
 
     return render_template("admin_inquiries.html", inquiries=rows)
+
+
+# ============================================
+# 라우트: 관리자 - 특정 문의 상세 보기
+# ============================================
+@app.route("/admin/inquiries/<int:inquiry_id>")
+def admin_inquiry_detail(inquiry_id):
+    # 관리자 권한 확인
+    if not session.get("user_id") or not is_admin():
+        flash("관리자 권한이 필요합니다.", "error")
+        return redirect(url_for("login"))
+
+    db = get_db()
+    row = db.execute(
+        """
+        SELECT
+            i.id,
+            i.subject,
+            i.message,
+            i.status,
+            i.created_at,
+            u.email AS user_email,
+            u.name AS user_name
+        FROM inquiries i
+        JOIN users u ON i.user_id = u.id
+        WHERE i.id = ?
+        """,
+        (inquiry_id,),
+    ).fetchone()
+
+    if row is None:
+        abort(404)
+
+    return render_template("admin_inquiry_detail.html", inquiry=row)
 
 
 # =======================

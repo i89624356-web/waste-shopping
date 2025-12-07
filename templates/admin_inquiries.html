@@ -27,10 +27,9 @@
                 <td>{{ q.user_name or '-' }}</td>
                 <td>{{ q.user_email }}</td>
                 <td class="admin-text-cell">
-                    <details>
-                        <summary>{{ q.subject }}</summary>
-                        <pre style="white-space: pre-wrap; margin-top: 4px;">{{ q.message }}</pre>
-                    </details>
+                    <a href="{{ url_for('admin_inquiry_detail', inquiry_id=q.id) }}">
+                        {{ q.subject }}
+                    </a>
                 </td>
                 <td>{{ q.status }}</td>
                 <td>{{ q.created_at }}</td>

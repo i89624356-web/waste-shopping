@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}ADMIN | INQUIRY #{{ inquiry.id }}{% endblock %}
+
+{% block content %}
+<section class="admin-header">
+    <h1 class="admin-title">ADMIN · INQUIRY #{{ inquiry.id }}</h1>
+</section>
+
+<section class="admin-table-wrap">
+    <table class="admin-table">
+        <tbody>
+            <tr>
+                <th style="width: 160px;">사용자</th>
+                <td>{{ inquiry.user_name or '-' }}</td>
+            </tr>
+            <tr>
+                <th>이메일</th>
+                <td>{{ inquiry.user_email }}</td>
+            </tr>
+            <tr>
+                <th>제목</th>
+                <td>{{ inquiry.subject }}</td>
+            </tr>
+            <tr>
+                <th>상태</th>
+                <td>{{ inquiry.status }}</td>
+            </tr>
+            <tr>
+                <th>작성일</th>
+                <td>{{ inquiry.created_at }}</td>
+            </tr>
+            <tr>
+                <th>내용</th>
+                <td>
+                    <pre style="white-space: pre-wrap; margin: 0;">{{ inquiry.message }}</pre>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div style="margin-top: 16px;">
+        <a href="{{ url_for('admin_inquiries') }}" class="admin-button">
+            ← 문의 목록으로
+        </a>
+    </div>
+</section>
+{% endblock %}
