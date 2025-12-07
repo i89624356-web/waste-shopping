@@ -180,6 +180,17 @@ a {
     font-size: 0.9rem;
 }
 
+textarea.auth-input {
+    font-size: inherit;
+    /* input과 같은 글자 크기 */
+    font-family: inherit;
+    /* input과 동일한 폰트 */
+    line-height: inherit;
+    /* 줄 높이도 통일 */
+    padding: 8px 10px;
+    /* input과 동일 */
+}
+
 .auth-input:focus {
     outline: none;
     border-color: #111;

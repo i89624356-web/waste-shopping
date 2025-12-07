@@ -31,13 +31,49 @@
                 <td>{{ inquiry.created_at }}</td>
             </tr>
             <tr>
-                <th>내용</th>
+                <th>문의 내용</th>
                 <td>
                     <pre style="white-space: pre-wrap; margin: 0;">{{ inquiry.message }}</pre>
                 </td>
             </tr>
+            <tr>
+                <th>관리자 답변</th>
+                <td>
+                    {% if inquiry.admin_reply %}
+                    <pre style="white-space: pre-wrap; margin: 0;">{{ inquiry.admin_reply }}</pre>
+                    {% if inquiry.replied_at %}
+                    <p class="helper-text" style="margin-top: 4px;">
+                        답변 일시: {{ inquiry.replied_at }}
+                    </p>
+                    {% endif %}
+                    {% else %}
+                    <span class="helper-text">아직 등록된 답변이 없습니다.</span>
+                    {% endif %}
+                </td>
+            </tr>
         </tbody>
     </table>
+
+    <!-- 답변 작성/수정 폼 -->
+    <form method="post" class="auth-form" style="margin-top: 16px;">
+        <label class="auth-label">
+            답변 작성 / 수정
+            <textarea name="admin_reply" rows="5" class="auth-input"
+                placeholder="문의에 대한 답변 내용을 입력하세요.">{{ inquiry.admin_reply or "" }}</textarea>
+        </label>
+
+        <div style="margin-top: 8px; display: flex; gap: 8px;">
+            <!-- 답변만 저장 -->
+            <button type="submit" name="action" value="save_reply" class="auth-button">
+                답변 저장
+            </button>
+
+            <!-- 답변 저장 + 상태를 CLOSED로 변경 -->
+            <button type="submit" name="action" value="close" class="auth-button">
+                답변 저장 후 CLOSED로 변경
+            </button>
+        </div>
+    </form>
 
     <div style="margin-top: 16px;">
         <a href="{{ url_for('admin_inquiries') }}" class="admin-button">

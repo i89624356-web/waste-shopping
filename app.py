@@ -114,6 +114,16 @@ def init_db():
         """
     )
 
+    # 이미 존재하는 테이블에 컬럼이 없을 수도 있으니, 안전하게 ALTER TABLE
+    cur.execute(
+        "ALTER TABLE inquiries "
+        "ADD COLUMN IF NOT EXISTS admin_reply TEXT"
+    )
+    cur.execute(
+        "ALTER TABLE inquiries "
+        "ADD COLUMN IF NOT EXISTS replied_at TEXT"
+    )
+
     db.commit()
 
 
@@ -332,7 +342,7 @@ def support():
     # GET: 내가 보낸 문의 목록
     cur.execute(
         """
-        SELECT id, subject, message, status, created_at
+        SELECT id, subject, message, status, created_at, admin_reply, replied_at
         FROM inquiries
         WHERE user_id = %s
         ORDER BY created_at DESC
@@ -423,7 +433,7 @@ def admin_inquiries():
 # ============================================
 # 라우트: 관리자 - 특정 문의 상세 보기
 # ============================================
-@app.route("/admin/inquiries/<int:inquiry_id>")
+@app.route("/admin/inquiries/<int:inquiry_id>", methods=["GET", "POST"])
 def admin_inquiry_detail(inquiry_id):
     # 관리자 권한 확인
     if not session.get("user_id") or not is_admin():
@@ -431,7 +441,50 @@ def admin_inquiry_detail(inquiry_id):
         return redirect(url_for("login"))
 
     db = get_db()
+    # SELECT 때는 dict처럼 쓰고 싶으니까 RealDictCursor 사용
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    # ------------------------
+    # POST 요청: 답변 저장 / 상태 변경
+    # ------------------------
+    if request.method == "POST":
+        action = request.form.get("action")
+        reply_text = request.form.get("admin_reply", "").strip()
+        now = datetime.now().isoformat(timespec="seconds")
+
+        # 기본 cursor (dict 필요 없음)
+        cur2 = db.cursor()
+
+        # 답변 텍스트가 있으면 admin_reply, replied_at 업데이트
+        if reply_text:
+            cur2.execute(
+                """
+                UPDATE inquiries
+                SET admin_reply = %s,
+                    replied_at = %s
+                WHERE id = %s
+                """,
+                (reply_text, now, inquiry_id),
+            )
+
+        # action이 close면 상태를 CLOSED로 변경
+        if action == "close":
+            cur2.execute(
+                """
+                UPDATE inquiries
+                SET status = 'CLOSED'
+                WHERE id = %s
+                """,
+                (inquiry_id,),
+            )
+
+        db.commit()
+        flash("문의 답변이 저장되었습니다.", "success")
+        return redirect(url_for("admin_inquiry_detail", inquiry_id=inquiry_id))
+
+    # ------------------------
+    # GET 요청: 상세 정보 조회
+    # ------------------------
     cur.execute(
         """
         SELECT
@@ -440,6 +493,8 @@ def admin_inquiry_detail(inquiry_id):
             i.message,
             i.status,
             i.created_at,
+            i.admin_reply,
+            i.replied_at,
             u.email AS user_email,
             u.name AS user_name
         FROM inquiries i
