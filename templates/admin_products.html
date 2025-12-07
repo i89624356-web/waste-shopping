@@ -45,13 +45,20 @@
                 <td>KRW {{ "{:,}".format(p.price) }}</td>
                 <td>
                     <div class="admin-actions">
-                        <a href="{{ url_for('admin_product_edit', product_id=p.id) }}" class="admin-button">
+
+                        <!-- 수정 버튼 (작게) -->
+                        <a href="{{ url_for('admin_product_edit', product_id=p.id) }}" class="edit-btn">
                             수정
                         </a>
+
+                        <!-- 삭제 버튼 (아이콘) -->
                         <form method="post" action="{{ url_for('admin_product_delete', product_id=p.id) }}"
                             onsubmit="return confirm('정말 삭제할까요?');">
-                            <button type="submit" class="admin-delete-button">삭제</button>
+                            <button type="submit" class="delete-icon-btn">
+                                <img src="https://cdn-icons-png.flaticon.com/512/1214/1214428.png" alt="삭제">
+                            </button>
                         </form>
+
                     </div>
                 </td>
             </tr>
