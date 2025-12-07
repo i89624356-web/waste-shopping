@@ -451,6 +451,19 @@ pre.inquiry-text {
     line-height: 1.4;
 }
 
+.drag-cell {
+    text-align: center;
+    cursor: grab;
+}
+
+.drag-handle {
+    display: inline-block;
+    padding: 4px 0;
+    cursor: grab;
+    user-select: none;
+    font-size: 1.1rem;
+}
+
 /* 반응형 */
 @media (max-width: 768px) {
     .product-detail-main {

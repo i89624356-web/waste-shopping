@@ -15,6 +15,7 @@ from flask import (
     g,
     flash,
     abort,
+    jsonify,
 )
 
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -137,6 +138,17 @@ def init_db():
         """
     )
 
+    # 정렬용 sort_order 컬럼 (없으면 추가)
+    cur.execute(
+        "ALTER TABLE products "
+        "ADD COLUMN IF NOT EXISTS sort_order INTEGER"
+    )
+
+    # sort_order 가 NULL 인 행은 id 기준으로 기본값 채우기
+    cur.execute(
+        "UPDATE products SET sort_order = id WHERE sort_order IS NULL"
+    )
+
     db.commit()
 
     # products 테이블이 비어 있고, products.json 이 있으면 한번만 마이그레이션
@@ -178,10 +190,10 @@ def migrate_products_from_json_if_needed():
 
         cur.execute(
             """
-            INSERT INTO products (name, price, image_url, status, category, description, created_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO products (name, price, image_url, status, category, description, created_at, sort_order)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
-            (name, price, image_url, status, category, description, now),
+            (name, price, image_url, status, category, description, now, p.get("id", 0)),
         )
 
     db.commit()
@@ -191,7 +203,7 @@ def migrate_products_from_json_if_needed():
 # products 헬퍼 함수 (DB)
 # =======================
 def db_get_products(category: str | None = None):
-    """카테고리 필터 포함한 상품 목록"""
+    """카테고리 필터 포함한 상품 목록 (sort_order 기준 정렬)"""
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
@@ -201,7 +213,7 @@ def db_get_products(category: str | None = None):
             SELECT id, name, price, image_url, status, category, description
             FROM products
             WHERE category = %s
-            ORDER BY id DESC
+            ORDER BY sort_order ASC, id DESC
             """,
             (category,),
         )
@@ -210,7 +222,7 @@ def db_get_products(category: str | None = None):
             """
             SELECT id, name, price, image_url, status, category, description
             FROM products
-            ORDER BY id DESC
+            ORDER BY sort_order ASC, id DESC
             """
         )
 
@@ -234,18 +246,25 @@ def db_get_product(product_id: int):
 def db_create_product(name, price, image_url, status, category, description):
     db = get_db()
     cur = db.cursor()
+
+    # 현재 최대 sort_order 구해서 그 뒤에 붙이기
+    cur.execute("SELECT COALESCE(MAX(sort_order), 0) FROM products")
+    max_order = cur.fetchone()[0]
+    new_order = max_order + 1
+
     now = datetime.now().isoformat(timespec="seconds")
     cur.execute(
         """
-        INSERT INTO products (name, price, image_url, status, category, description, created_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO products (name, price, image_url, status, category, description, created_at, sort_order)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id
         """,
-        (name, price, image_url, status, category, description, now),
+        (name, price, image_url, status, category, description, now, new_order),
     )
     new_id = cur.fetchone()[0]
     db.commit()
     return new_id
+    jsonify,
 
 
 def db_update_product(product_id, name, price, image_url, status, category, description):
@@ -808,6 +827,38 @@ def admin_product_edit(product_id):
         product=target,
         categories=categories,
     )
+
+
+# =======================
+# 라우트: 관리자 - 상품 순서 재정렬 (AJAX)
+# =======================
+@app.route("/admin/products/reorder", methods=["POST"])
+def admin_products_reorder():
+    if not session.get("user_id") or not is_admin():
+        return jsonify({"ok": False, "error": "unauthorized"}), 403
+
+    data = request.get_json() or {}
+    order = data.get("order", [])
+
+    if not isinstance(order, list):
+        return jsonify({"ok": False, "error": "invalid payload"}), 400
+
+    db = get_db()
+    cur = db.cursor()
+
+    # order = [5, 2, 7, ...] 이런 식의 상품 id 리스트
+    for idx, pid in enumerate(order, start=1):
+        try:
+            pid_int = int(pid)
+        except ValueError:
+            continue
+        cur.execute(
+            "UPDATE products SET sort_order = %s WHERE id = %s",
+            (idx, pid_int),
+        )
+
+    db.commit()
+    return jsonify({"ok": True})
 
 
 # =======================

@@ -15,44 +15,37 @@
     <table class="admin-table">
         <thead>
             <tr>
-                <th>ID</th>
+                <th style="width: 40px;">순서</th>
+                <th style="width: 60px;">ID</th>
                 <th>이미지</th>
-                <th>상품명</th>
+                <th>이름</th>
                 <th>카테고리</th>
-                <th>가격</th>
                 <th>상태</th>
-                <th>관리</th>
+                <th>가격</th>
+                <th style="width: 160px;">관리</th>
             </tr>
         </thead>
-        <tbody>
+        <tbody id="product-table-body">
             {% for p in products %}
-            <tr>
+            <tr data-product-id="{{ p.id }}">
+                <td class="drag-cell">
+                    <span class="drag-handle">≡</span>
+                </td>
                 <td>{{ p.id }}</td>
                 <td>
                     <div class="admin-thumb">
                         <img src="{{ p.image_url }}" alt="{{ p.name }}">
                     </div>
                 </td>
-                <td>{{ p.name }}</td>
+                <td class="admin-text-cell">
+                    {{ p.name }}
+                </td>
                 <td>{{ p.category }}</td>
+                <td>{{ p.status }}</td>
+                <td>KRW {{ "{:,}".format(p.price) }}</td>
                 <td>
-                    {% if p.price %}
-                    {{ "{:,}".format(p.price) }}
-                    {% else %}
-                    -
-                    {% endif %}
-                </td>
-                <td>
-                    {% if p.status == "OUT_OF_STOCK" %}
-                    <span class="badge badge-out">OUT</span>
-                    {% else %}
-                    <span class="badge badge-in">IN</span>
-                    {% endif %}
-                </td>
-                <td>
-                    <div style="display: flex; gap: 6px;">
-                        <a href="{{ url_for('admin_product_edit', product_id=p.id) }}" class="admin-secondary-button"
-                            style="padding: 4px 8px; font-size: 0.75rem;">
+                    <div class="admin-actions">
+                        <a href="{{ url_for('admin_product_edit', product_id=p.id) }}" class="admin-button">
                             수정
                         </a>
                         <form method="post" action="{{ url_for('admin_product_delete', product_id=p.id) }}"
@@ -69,4 +62,37 @@
     <p>등록된 상품이 없습니다.</p>
     {% endif %}
 </section>
+
+{# SortableJS 로 드래그 정렬 구현 #}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+<script>
+    const tbody = document.getElementById("product-table-body");
+    if (tbody) {
+        new Sortable(tbody, {
+            handle: ".drag-handle",
+            animation: 150,
+            onEnd: function () {
+                const order = [];
+                tbody.querySelectorAll("tr[data-product-id]").forEach(tr => {
+                    order.push(tr.dataset.productId);
+                });
+
+                fetch("{{ url_for('admin_products_reorder') }}", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-Requested-With": "XMLHttpRequest"
+                    },
+                    body: JSON.stringify({ order: order })
+                }).then(resp => {
+                    if (!resp.ok) {
+                        alert("순서 저장에 실패했습니다.");
+                    }
+                }).catch(() => {
+                    alert("순서 저장에 실패했습니다.");
+                });
+            }
+        });
+    }
+</script>
 {% endblock %}
