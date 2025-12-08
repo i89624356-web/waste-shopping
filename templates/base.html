@@ -28,7 +28,8 @@
                 {% endif %}
 
                 {% if current_user_email %}
-                <a href="{{ url_for('support') }}" class="nav-link">SUPPORT</a>
+                <a href="{{ url_for('support') }}" class="nav-link">고객센터
+                </a>
                 <span class="nav-user">{{ current_user_email }}</span>
                 <a href="{{ url_for('account_delete') }}" class="nav-link">탈퇴</a>
                 <a href="{{ url_for('logout') }}" class="nav-link">LOGOUT</a>
