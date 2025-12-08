@@ -529,7 +529,7 @@ pre.inquiry-text {
 
 /* 로고 크기 변경: height */
 .logo-img {
-    height: 60px;
+    height: 45px;
     width: auto;
     object-fit: contain;
 }
