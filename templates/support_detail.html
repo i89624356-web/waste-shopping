@@ -16,7 +16,13 @@
             </tr>
             <tr>
                 <th>상태</th>
-                <td>{{ inquiry.status }}</td>
+                <td>
+                    {% if inquiry.status == 'OPEN' %}
+                    처리 미완료
+                    {% else %}
+                    처리 완료
+                    {% endif %}
+                </td>
             </tr>
             <tr>
                 <th>작성일</th>

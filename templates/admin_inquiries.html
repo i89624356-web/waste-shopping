@@ -31,7 +31,13 @@
                         {{ q.subject }}
                     </a>
                 </td>
-                <td>{{ q.status }}</td>
+                <td>
+                    {% if q.status == 'OPEN' %}
+                    처리 미완료
+                    {% else %}
+                    처리 완료
+                    {% endif %}
+                </td>
                 <td>{{ q.created_at }}</td>
             </tr>
             {% endfor %}
