@@ -527,6 +527,7 @@ pre.inquiry-text {
     transform: scale(1.1);
 }
 
+/* 로고 크기 변경: height */
 .logo-img {
     height: 60px;
     width: auto;
