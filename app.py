@@ -333,6 +333,36 @@ def db_delete_product(product_id):
     db.commit()
 
 
+def db_delete_user_and_related(user_id: int) -> bool:
+    """
+    회원 1명을 탈퇴 처리한다.
+    - inquiries: 해당 user_id가 남긴 문의 모두 삭제
+    - users: 해당 회원 삭제
+    - 관리자(ADMIN_EMAILS)는 보호 차원에서 삭제 금지 → False 반환
+    """
+    db = get_db()
+    # 이메일 먼저 조회
+    cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT id, email FROM users WHERE id = %s", (user_id,))
+    user = cur.fetchone()
+
+    if not user:
+        return False
+
+    # 관리자 계정은 삭제 금지
+    if user["email"] in ADMIN_EMAILS:
+        return False
+
+    # 실제 삭제
+    cur2 = db.cursor()
+    # 1) 해당 회원이 남긴 문의 삭제
+    cur2.execute("DELETE FROM inquiries WHERE user_id = %s", (user_id,))
+    # 2) 회원 삭제
+    cur2.execute("DELETE FROM users WHERE id = %s", (user_id,))
+    db.commit()
+    return True
+
+
 # =======================
 # 템플릿 공통 컨텍스트
 # =======================
@@ -473,6 +503,32 @@ def logout():
     return redirect(url_for("shop_list"))
 
 
+# =======================
+# 라우트: 회원 본인 탈퇴
+# =======================
+@app.route("/account/delete", methods=["GET", "POST"])
+def account_delete():
+    if not session.get("user_id"):
+        flash("로그인이 필요한 서비스입니다.", "error")
+        return redirect(url_for("login"))
+
+    user_id = session["user_id"]
+
+    if request.method == "POST":
+        ok = db_delete_user_and_related(user_id)
+        if not ok:
+            flash("관리자 계정이거나 존재하지 않는 계정이라 탈퇴할 수 없습니다.", "error")
+            return redirect(url_for("shop_list"))
+
+        # 세션 정리
+        session.clear()
+        flash("회원 탈퇴가 완료되었습니다.", "success")
+        return redirect(url_for("shop_list"))
+
+    # GET: 확인 페이지
+    return render_template("account_delete.html")
+
+
 # ============================================
 # 라우트: 사용자 - 고객센터 문의 작성 및 조회
 # ============================================
@@ -601,6 +657,24 @@ def admin_users():
     users = cur.fetchall()
 
     return render_template("admin_users.html", users=users)
+
+
+# =======================
+# 라우트: 관리자 - 회원 강제 탈퇴
+# =======================
+@app.route("/admin/users/<int:user_id>/delete", methods=["POST"])
+def admin_user_delete(user_id):
+    if not session.get("user_id") or not is_admin():
+        flash("관리자 권한이 필요합니다.", "error")
+        return redirect(url_for("login"))
+
+    ok = db_delete_user_and_related(user_id)
+    if not ok:
+        flash("관리자 계정이거나 존재하지 않는 계정이라 삭제할 수 없습니다.", "error")
+    else:
+        flash("해당 회원이 탈퇴 처리되었습니다.", "success")
+
+    return redirect(url_for("admin_users"))
 
 
 # =======================

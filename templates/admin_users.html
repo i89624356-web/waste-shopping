@@ -13,18 +13,31 @@
         <thead>
             <tr>
                 <th>ID</th>
-                <th>이름</th>
                 <th>이메일</th>
+                <th>이름</th>
                 <th>가입일</th>
+                <th>관리</th>
             </tr>
         </thead>
         <tbody>
             {% for u in users %}
             <tr>
                 <td>{{ u.id }}</td>
-                <td>{{ u.name or '-' }}</td>
                 <td>{{ u.email }}</td>
+                <td>{{ u.name or "-" }}</td>
                 <td>{{ u.created_at }}</td>
+                <td>
+                    {% if u.email in ADMIN_EMAILS %}
+                    <span style="font-size:0.8rem; color:#888;">관리자 계정</span>
+                    {% else %}
+                    <form method="post" action="{{ url_for('admin_user_delete', user_id=u.id) }}"
+                        onsubmit="return confirm('정말 이 회원을 탈퇴 처리할까요? 문의 내역도 함께 삭제됩니다.');">
+                        <button type="submit" class="delete-icon-btn">
+                            <img src="https://cdn-icons-png.flaticon.com/512/1214/1214428.png" alt="삭제">
+                        </button>
+                    </form>
+                    {% endif %}
+                </td>
             </tr>
             {% endfor %}
         </tbody>
