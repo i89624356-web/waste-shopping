@@ -527,6 +527,13 @@ pre.inquiry-text {
     transform: scale(1.1);
 }
 
+.logo-img {
+    height: 45px;
+    width: auto;
+    object-fit: contain;
+}
+
+
 /* 반응형 */
 @media (max-width: 768px) {
     .product-detail-main {

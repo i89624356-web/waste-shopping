@@ -12,8 +12,13 @@
     <!-- HEADER -->
     <header class="header">
         <div class="header-inner">
+
+            <!-- 로고 영역 -->
             <div class="logo">
-                <a href="{{ url_for('shop_list') }}">MY BRAND</a>
+                <a href="{{ url_for('shop_list') }}">
+                    <img src="{{ url_for('static', filename='logo/logo_transparent.png') }}" alt="LOGO"
+                        class="logo-img">
+                </a>
             </div>
 
             <nav class="nav">
