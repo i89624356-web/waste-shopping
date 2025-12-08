@@ -91,6 +91,11 @@ a {
     font-size: 0.85rem;
     text-transform: uppercase;
     margin-bottom: 28px;
+
+    justify-content: center;
+    /* ← 핵심 */
+    align-items: center;
+    /* (선택) 세로축 정렬 */
 }
 
 .category {
@@ -534,6 +539,21 @@ pre.inquiry-text {
     object-fit: contain;
 }
 
+.category {
+    font-size: 15px;
+    color: #666;
+    text-decoration: none;
+    padding: 4px 6px;
+}
+
+.category:hover {
+    color: #000;
+}
+
+.category.active {
+    font-weight: 700;
+    color: #000;
+}
 
 /* 반응형 */
 @media (max-width: 768px) {
