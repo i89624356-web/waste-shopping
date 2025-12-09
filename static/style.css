@@ -555,6 +555,34 @@ pre.inquiry-text {
     color: #000;
 }
 
+/* FOOTER ICONS */
+.footer-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    /* 왼쪽 텍스트, 오른쪽 아이콘 */
+    gap: 16px;
+}
+
+.footer-icons {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.footer-icon-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.footer-icon-img {
+    width: 24px;
+    /* 아이콘 크기 조절 */
+    height: 24px;
+    display: block;
+}
+
 /* 반응형 */
 @media (max-width: 768px) {
     .product-detail-main {
