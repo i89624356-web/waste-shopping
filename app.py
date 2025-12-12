@@ -162,6 +162,30 @@ def init_db():
         "ADD COLUMN IF NOT EXISTS image_mime TEXT"
     )
 
+    # ---------- product_images ----------
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS product_images (
+        id SERIAL PRIMARY KEY,
+        product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        image_data BYTEA,
+        image_mime TEXT,
+        image_url TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL
+    )
+    """)
+
+    # ---------- product_variants ----------
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS product_variants (
+        id SERIAL PRIMARY KEY,
+        product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        size TEXT NOT NULL,
+        stock INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+    )
+    """)
+
     db.commit()
 
     # products 테이블이 비어 있고, products.json 이 있으면 한번만 마이그레이션
@@ -361,6 +385,84 @@ def db_delete_user_and_related(user_id: int) -> bool:
     cur2.execute("DELETE FROM users WHERE id = %s", (user_id,))
     db.commit()
     return True
+
+
+def now_kst_iso():
+    return datetime.now(KST).isoformat(timespec="seconds")
+
+def db_get_product_images(product_id: int):
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""
+        SELECT id, sort_order
+        FROM product_images
+        WHERE product_id = %s
+        ORDER BY sort_order ASC, id ASC
+    """, (product_id,))
+    return cur.fetchall()
+
+def db_insert_product_images(product_id: int, files):
+    """files: request.files.getlist('images')"""
+    db = get_db()
+    cur = db.cursor()
+    ts = now_kst_iso()
+
+    # 기존 이미지 max order
+    cur.execute("SELECT COALESCE(MAX(sort_order), 0) FROM product_images WHERE product_id=%s", (product_id,))
+    base = cur.fetchone()[0]
+
+    order = base
+    for f in files:
+        if not f or not f.filename:
+            continue
+        data = f.read()
+        mime = f.mimetype or "image/jpeg"
+        order += 1
+        cur.execute("""
+            INSERT INTO product_images (product_id, image_data, image_mime, image_url, sort_order, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (product_id, data, mime, "", order, ts))
+
+    db.commit()
+
+def db_delete_product_image(image_id: int, product_id: int):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("DELETE FROM product_images WHERE id=%s AND product_id=%s", (image_id, product_id))
+    db.commit()
+
+def db_get_variants(product_id: int):
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""
+        SELECT id, size, stock
+        FROM product_variants
+        WHERE product_id=%s
+        ORDER BY id ASC
+    """, (product_id,))
+    return cur.fetchall()
+
+def db_replace_variants(product_id: int, sizes: list[str], stocks: list[str]):
+    """관리자 폼에서 넘어온 사이즈/재고를 통째로 갈아끼우는 방식(간단, 안전)"""
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("DELETE FROM product_variants WHERE product_id=%s", (product_id,))
+
+    ts = now_kst_iso()
+    for s, st in zip(sizes, stocks):
+        s = (s or "").strip()
+        if not s:
+            continue
+        try:
+            stock_i = int(st)
+        except Exception:
+            stock_i = 0
+        cur.execute("""
+            INSERT INTO product_variants (product_id, size, stock, created_at)
+            VALUES (%s, %s, %s, %s)
+        """, (product_id, s.upper(), stock_i, ts))
+
+    db.commit()
 
 
 # =======================
@@ -966,12 +1068,19 @@ def admin_products_reorder():
 # =======================
 @app.route("/product/<int:product_id>")
 def product_detail(product_id):
-    target = db_get_product(product_id)
-
-    if not target:
+    product = db_get_product(product_id)
+    if not product:
         abort(404)
 
-    return render_template("product_detail.html", product=target)
+    images = db_get_product_images(product_id)
+    variants = db_get_variants(product_id)
+
+    return render_template(
+        "product_detail.html",
+        product=product,
+        images=images,
+        variants=variants,
+    )
 
 
 @app.route("/product_image/<int:product_id>")
@@ -997,6 +1106,27 @@ def product_image(product_id):
         return redirect(image_url)
 
     # 둘 다 없으면 404
+    abort(404)
+
+
+@app.route("/product_image_by_id/<int:image_id>")
+def product_image_by_id(image_id):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("""
+        SELECT image_data, image_mime, image_url
+        FROM product_images
+        WHERE id=%s
+    """, (image_id,))
+    row = cur.fetchone()
+    if not row:
+        abort(404)
+
+    data, mime, url = row
+    if data:
+        return Response(data, mimetype=mime or "image/jpeg")
+    if url:
+        return redirect(url)
     abort(404)
 
 
