@@ -1,48 +1,73 @@
 {% extends "base.html" %}
-
 {% block title %}{{ product.name }} | WASTED{% endblock %}
 
 {% block content %}
-<section class="product-detail">
-    <div class="product-detail-main">
-        <div class="product-detail-image">
-            <img src="{{ url_for('product_image', product_id=product.id) }}" alt="{{ product.name }}">
+<section class="pd-wrap">
+    <!-- LEFT: image -->
+    <div class="pd-left">
+        <img class="pd-image" src="{{ url_for('product_image', product_id=product.id) }}" alt="{{ product.name }}">
+    </div>
+
+    <!-- RIGHT: info -->
+    <div class="pd-right">
+        <h1 class="pd-name">{{ product.name }}</h1>
+
+        <div class="pd-price">
+            {% if product.status == "OUT_OF_STOCK" %}
+            <span class="pd-soldout">OUT OF STOCK</span>
+            {% else %}
+            KRW {{ "{:,}".format(product.price) }}
+            {% endif %}
         </div>
 
-        <div class="product-detail-info">
-            <h1 class="product-detail-name">{{ product.name }}</h1>
-
-            <div class="product-detail-meta">
-                <div class="product-detail-price">
-                    {% if product.price %}
-                    KRW {{ "{:,}".format(product.price) }}
-                    {% else %}
-                    가격 미정
-                    {% endif %}
-                </div>
-
-                <div class="product-detail-status">
-                    {% if product.status == "OUT_OF_STOCK" %}
-                    <span class="badge badge-out">OUT OF STOCK</span>
-                    {% else %}
-                    <span class="badge badge-in">IN STOCK</span>
-                    {% endif %}
-                </div>
-
-                <div class="product-detail-category">
-                    CATEGORY · {{ product.category }}
-                </div>
+        <!-- 컬러 썸네일 (지금은 샘플 3개) -->
+        <div class="pd-section">
+            <div class="pd-label">COLOR</div>
+            <div class="pd-colors">
+                <button type="button" class="pd-color active" aria-label="color 1">
+                    <img src="{{ url_for('product_image', product_id=product.id) }}" alt="">
+                </button>
+                <button type="button" class="pd-color" aria-label="color 2">
+                    <img src="{{ url_for('product_image', product_id=product.id) }}" alt="">
+                </button>
+                <button type="button" class="pd-color" aria-label="color 3">
+                    <img src="{{ url_for('product_image', product_id=product.id) }}" alt="">
+                </button>
             </div>
+        </div>
 
-            <div class="product-detail-desc">
-                {% if product.description %}
-                {{ product.description }}
+        <!-- 사이즈 -->
+        <div class="pd-section">
+            <div class="pd-label">SIZE</div>
+
+            <div class="pd-sizes {% if product.status == 'OUT_OF_STOCK' %}is-soldout{% endif %}">
+                {% set sizes = ["S", "M", "L", "XL"] %}
+                {% for s in sizes %}
+                {% if product.status == "OUT_OF_STOCK" %}
+                <button type="button" class="pd-size is-disabled" disabled>{{ s }}</button>
                 {% else %}
-                이 상품에 대한 상세 설명이 들어갈 자리입니다.
+                <button type="button" class="pd-size">{{ s }}</button>
                 {% endif %}
+                {% endfor %}
             </div>
 
+            <div class="pd-note">7만원 이상 구매 시 무료 배송</div>
         </div>
+
+        <!-- 버튼 -->
+        <div class="pd-actions">
+            {% if product.status == "OUT_OF_STOCK" %}
+            <button class="pd-btn" disabled>품절</button>
+            {% else %}
+            <button class="pd-btn">구매하기</button>
+            {% endif %}
+        </div>
+
+        {% if product.description %}
+        <div class="pd-desc">
+            {{ product.description }}
+        </div>
+        {% endif %}
     </div>
 </section>
 {% endblock %}
