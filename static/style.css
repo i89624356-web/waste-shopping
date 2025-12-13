@@ -1,4 +1,6 @@
-/* 기본 설정 */
+/* =========================
+   BASE RESET
+========================= */
 * {
     box-sizing: border-box;
 }
@@ -15,7 +17,9 @@ a {
     text-decoration: none;
 }
 
-/* HEADER */
+/* =========================
+   HEADER / NAV
+========================= */
 .header {
     border-bottom: 1px solid #e5e5e5;
 }
@@ -36,7 +40,13 @@ a {
     text-transform: uppercase;
 }
 
-/* NAVIGATION */
+/* 로고 이미지 */
+.logo-img {
+    height: 45px;
+    width: auto;
+    object-fit: contain;
+}
+
 .nav {
     display: flex;
     align-items: center;
@@ -54,14 +64,15 @@ a {
     color: #555;
 }
 
-/* MAIN */
+/* =========================
+   MAIN / FLASH
+========================= */
 .main {
     max-width: 1120px;
     margin: 0 auto;
     padding: 24px 20px 60px;
 }
 
-/* FLASH MESSAGES */
 .flash-container {
     margin-bottom: 16px;
 }
@@ -83,7 +94,9 @@ a {
     color: #0c7a2e;
 }
 
-/* CATEGORY BAR */
+/* =========================
+   CATEGORY BAR (SHOP)
+========================= */
 .category-bar {
     display: flex;
     flex-wrap: wrap;
@@ -92,22 +105,30 @@ a {
     text-transform: uppercase;
     margin-bottom: 28px;
 
+    /* 가운데 정렬 */
     justify-content: center;
-    /* ← 핵심 */
     align-items: center;
-    /* (선택) 세로축 정렬 */
 }
 
 .category {
-    color: #777;
+    font-size: 15px;
+    color: #666;
+    text-decoration: none;
+    padding: 4px 6px;
+}
+
+.category:hover {
+    color: #000;
 }
 
 .category.active {
-    color: #111;
-    font-weight: 600;
+    font-weight: 700;
+    color: #000;
 }
 
-/* PRODUCT LIST GRID */
+/* =========================
+   PRODUCT LIST GRID (SHOP)
+========================= */
 .grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -154,7 +175,9 @@ a {
     color: #999;
 }
 
-/* LOGIN & SIGNUP PAGE */
+/* =========================
+   AUTH (LOGIN / SIGNUP / SUPPORT FORM 스타일 공유)
+========================= */
 .auth-wrapper {
     max-width: 360px;
     margin: 40px auto 0;
@@ -186,14 +209,10 @@ a {
 }
 
 textarea.auth-input {
-    font-size: inherit;
-    /* input과 같은 글자 크기 */
     font-family: inherit;
-    /* input과 동일한 폰트 */
+    font-size: inherit;
     line-height: inherit;
-    /* 줄 높이도 통일 */
     padding: 8px 10px;
-    /* input과 동일 */
 }
 
 .auth-input:focus {
@@ -223,7 +242,9 @@ textarea.auth-input {
     color: #666;
 }
 
-/* FOOTER */
+/* =========================
+   FOOTER (+ ICONS)
+========================= */
 .footer {
     border-top: 1px solid #e5e5e5;
 }
@@ -234,9 +255,36 @@ textarea.auth-input {
     padding: 16px 20px 24px;
     font-size: 0.75rem;
     color: #777;
+
+    /* 아이콘 넣는 구조 */
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    /* 왼쪽 텍스트, 오른쪽 아이콘 */
+    gap: 16px;
 }
 
-/* ADMIN 공통 */
+.footer-icons {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.footer-icon-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.footer-icon-img {
+    width: 24px;
+    height: 24px;
+    display: block;
+}
+
+/* =========================
+   ADMIN COMMON
+========================= */
 .admin-title {
     font-size: 1.2rem;
     margin-bottom: 16px;
@@ -397,8 +445,85 @@ textarea.auth-input {
     gap: 8px;
 }
 
+/* admin: drag handle */
+.drag-cell {
+    text-align: center;
+    cursor: grab;
+}
 
-/* PRODUCT DETAIL */
+.drag-handle {
+    display: inline-block;
+    padding: 4px 0;
+    cursor: grab;
+    user-select: none;
+    font-size: 1.1rem;
+}
+
+/* admin actions (정리된 최종 버전) */
+.admin-actions {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 14px;
+    padding-right: 6px;
+}
+
+.admin-actions .admin-button,
+.admin-actions .admin-delete-button {
+    width: 100%;
+    text-align: center;
+}
+
+/* 수정 버튼 */
+.edit-btn {
+    background: #111;
+    color: white;
+    padding: 6px 16px;
+    font-size: 0.85rem;
+    border-radius: 6px;
+    text-decoration: none;
+    display: inline-block;
+    margin-right: 4px;
+}
+
+/* 삭제 아이콘 버튼 */
+.delete-icon-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.delete-icon-btn img {
+    width: 22px;
+    height: 22px;
+    opacity: 0.85;
+    transition: 0.15s ease;
+}
+
+.delete-icon-btn:hover img {
+    opacity: 1;
+    transform: scale(1.1);
+}
+
+/* inquiry text pre */
+pre.inquiry-text {
+    font-family: inherit;
+    font-size: inherit;
+    line-height: 1.4;
+    white-space: pre-wrap;
+}
+
+/* =========================
+   PRODUCT DETAIL (OLD LAYOUT - 보존)
+   (네가 지금 쓰는 pd-wrap이 있어서 이건 사실상 구형인데,
+    혹시 쓰는 템플릿이 있으면 깨지지 않게 남겨둠)
+========================= */
 .product-detail {
     margin-top: 20px;
 }
@@ -440,150 +565,9 @@ textarea.auth-input {
     margin-top: 8px;
 }
 
-pre.inquiry-text {
-    font-family: inherit;
-    /* input과 동일한 글씨체 */
-    font-size: inherit;
-    /* input과 동일한 크기 */
-    line-height: 1.4;
-    white-space: pre-wrap;
-    /* 기존 pre-wrap 유지 */
-}
-
-pre.inquiry-text {
-    font-family: inherit;
-    font-size: inherit;
-    line-height: 1.4;
-}
-
-.drag-cell {
-    text-align: center;
-    cursor: grab;
-}
-
-.drag-handle {
-    display: inline-block;
-    padding: 4px 0;
-    cursor: grab;
-    user-select: none;
-    font-size: 1.1rem;
-}
-
-.admin-actions {
-    display: flex;
-    flex-direction: row;
-    /* 세로로 정렬 (원하면 row로 바꿔도 됨) */
-    gap: 6px;
-    align-items: stretch;
-}
-
-.admin-actions .admin-button,
-.admin-actions .admin-delete-button {
-    width: 100%;
-    text-align: center;
-}
-
-/* 관리자 페이지 버튼 정렬 */
-.admin-actions {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 14px;
-    /* ★ 버튼 간격 넓히기 */
-    padding-right: 6px;
-    /* 오른쪽 테이블 여백 */
-}
-
-/* 수정 버튼 */
-.edit-btn {
-    background: #111;
-    color: white;
-    padding: 6px 16px;
-    font-size: 0.85rem;
-    border-radius: 6px;
-    text-decoration: none;
-    display: inline-block;
-    margin-right: 4px;
-    /* ★ 버튼 오른쪽 살짝 띄움 */
-}
-
-/* 삭제 아이콘 버튼 */
-.delete-icon-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 2px;
-    width: 30px;
-    height: 30px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-}
-
-.delete-icon-btn img {
-    width: 22px;
-    height: 22px;
-    opacity: 0.85;
-    transition: 0.15s ease;
-}
-
-.delete-icon-btn:hover img {
-    opacity: 1;
-    transform: scale(1.1);
-}
-
-/* 로고 크기 변경: height */
-.logo-img {
-    height: 45px;
-    width: auto;
-    object-fit: contain;
-}
-
-.category {
-    font-size: 15px;
-    color: #666;
-    text-decoration: none;
-    padding: 4px 6px;
-}
-
-.category:hover {
-    color: #000;
-}
-
-.category.active {
-    font-weight: 700;
-    color: #000;
-}
-
-/* FOOTER ICONS */
-.footer-inner {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    /* 왼쪽 텍스트, 오른쪽 아이콘 */
-    gap: 16px;
-}
-
-.footer-icons {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.footer-icon-link {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.footer-icon-img {
-    width: 24px;
-    /* 아이콘 크기 조절 */
-    height: 24px;
-    display: block;
-}
-
-/* PRODUCT DETAIL LAYOUT */
+/* =========================
+   PRODUCT DETAIL (pd-*)
+========================= */
 .pd-wrap {
     display: grid;
     grid-template-columns: 1.2fr 0.8fr;
@@ -659,8 +643,11 @@ pre.inquiry-text {
     display: block;
 }
 
+/* COLOR 선택 표시 (최종) */
 .pd-color.active {
     border-color: #111;
+    outline: 1px solid #000;
+    /* 네가 추가한 느낌 유지 */
 }
 
 /* sizes */
@@ -685,7 +672,7 @@ pre.inquiry-text {
     border-color: #111;
 }
 
-/* 품절일 때: 두번째 사진처럼 “선 그어진/비활성” 느낌 */
+/* 품절(비활성) + 빗금 */
 .pd-size.is-disabled {
     opacity: 0.45;
     cursor: not-allowed;
@@ -702,6 +689,13 @@ pre.inquiry-text {
             #333 51%,
             transparent 52%);
     pointer-events: none;
+}
+
+/* SIZE 선택 유지 표시 (hover처럼 고정) */
+.pd-size.is-selected {
+    border: 1px solid #000;
+    background: #000;
+    color: #fff;
 }
 
 /* actions */
@@ -737,7 +731,14 @@ pre.inquiry-text {
     color: #222;
 }
 
-/* responsive */
+.pd-helper {
+    font-size: 0.9rem;
+    opacity: 0.8;
+}
+
+/* =========================
+   RESPONSIVE
+========================= */
 @media (max-width: 900px) {
     .pd-wrap {
         grid-template-columns: 1fr;
@@ -749,7 +750,6 @@ pre.inquiry-text {
     }
 }
 
-/* 반응형 */
 @media (max-width: 768px) {
     .product-detail-main {
         grid-template-columns: 1fr;

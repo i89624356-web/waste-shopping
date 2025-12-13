@@ -5,11 +5,13 @@
 <section class="pd-wrap">
     <!-- LEFT: image -->
     <div class="pd-left">
-        <img id="mainProductImage" class="pd-image" src="{% if images and images|length > 0 %}
-                    {{ url_for('product_image_by_id', image_id=images[0].id) }}
-                 {% else %}
-                    {{ url_for('product_image', product_id=product.id) }}
-                 {% endif %}" alt="{{ product.name }}">
+        {% if images and images|length > 0 %}
+        <img id="pdMainImage" class="pd-image" src="{{ url_for('product_image_by_id', image_id=images[0].id) }}"
+            alt="{{ product.name }}">
+        {% else %}
+        <img id="pdMainImage" class="pd-image" src="{{ url_for('product_image', product_id=product.id) }}"
+            alt="{{ product.name }}">
+        {% endif %}
     </div>
 
     <!-- RIGHT: info -->
@@ -20,42 +22,69 @@
             KRW {{ "{:,}".format(product.price) }}
         </div>
 
-        <!-- COLOR (업로드한 이미지 개수만큼) -->
-        {% if images and images|length > 0 %}
+        <!-- (선택 값) -->
+        <input type="hidden" id="selectedImageId"
+            value="{% if images and images|length > 0 %}{{ images[0].id }}{% else %}{% endif %}">
+        <input type="hidden" id="selectedSize" value="">
+
+        <!-- COLOR -->
         <div class="pd-section">
             <div class="pd-label">COLOR</div>
-            <div class="pd-colors" id="colorSwatches">
-                {% for img in images %}
-                <button type="button" class="pd-color {% if loop.first %}active{% endif %}"
-                    onclick="selectImage({{ img.id }}, this)" aria-label="color {{ loop.index }}">
-                    <img src="{{ url_for('product_image_by_id', image_id=img.id) }}" alt="thumb {{ loop.index }}">
+
+            {% if images and images|length > 0 %}
+            <div class="pd-colors" id="pdColors">
+                {% for im in images %}
+                <button type="button" class="pd-color {% if loop.index0 == 0 %}active{% endif %}"
+                    data-image-id="{{ im.id }}" data-image-url="{{ url_for('product_image_by_id', image_id=im.id) }}"
+                    aria-label="color {{ loop.index }}">
+                    <img src="{{ url_for('product_image_by_id', image_id=im.id) }}" alt="">
                 </button>
                 {% endfor %}
             </div>
+            {% else %}
+            <!-- 이미지가 DB에 없을 때 fallback -->
+            <div class="pd-colors">
+                <button type="button" class="pd-color active" aria-label="color 1">
+                    <img src="{{ url_for('product_image', product_id=product.id) }}" alt="">
+                </button>
+            </div>
+            {% endif %}
         </div>
-        {% endif %}
 
-        <!-- SIZE (variants 기반) -->
+        <!-- SIZE -->
         <div class="pd-section">
             <div class="pd-label">SIZE</div>
 
-            <div class="pd-sizes">
+            {% set sizes = ["S","M","L","XL"] %}
+
+            <div class="pd-sizes" id="pdSizes">
+                {% for s in sizes %}
+                {% set found = false %}
+                {% set in_stock = false %}
                 {% for v in variants %}
-                {% if v.stock <= 0 %} <button type="button" class="pd-size is-disabled" disabled>
-                    {{ v.size }}
-                    </button>
-                    {% else %}
-                    <button type="button" class="pd-size">
-                        {{ v.size }}
-                    </button>
-                    {% endif %}
-                    {% endfor %}
+                {% if v.size == s %}
+                {% set found = true %}
+                {% if v.stock|int > 0 %}
+                {% set in_stock = true %}
+                {% endif %}
+                {% endif %}
+                {% endfor %}
+
+                {% if found and in_stock %}
+                <button type="button" class="pd-size" data-size="{{ s }}">{{ s }}</button>
+                {% else %}
+                <!-- 없는 사이즈거나 재고 0이면 빗금 + 비활성 -->
+                <button type="button" class="pd-size is-disabled" disabled data-size="{{ s }}">{{ s }}</button>
+                {% endif %}
+                {% endfor %}
             </div>
+
+            <div class="pd-helper" id="pdHelper" style="margin-top:10px;"></div>
         </div>
 
         <!-- 버튼 -->
         <div class="pd-actions">
-            <button class="pd-btn">구매하기</button>
+            <button class="pd-btn" id="pdBuyBtn" type="button">구매하기</button>
         </div>
 
         {% if product.description %}
@@ -67,15 +96,63 @@
 </section>
 
 <script>
-    function selectImage(imageId, btn) {
-        const mainImg = document.getElementById("mainProductImage");
-        mainImg.src = `/product_image_by_id/${imageId}`;
+    // ===== COLOR 선택: 썸네일 클릭 -> 메인 이미지 변경 + active 유지 =====
+    const mainImg = document.getElementById("pdMainImage");
+    const colorsBox = document.getElementById("pdColors");
+    const selectedImageId = document.getElementById("selectedImageId");
 
-        document
-            .querySelectorAll("#colorSwatches .pd-color")
-            .forEach(el => el.classList.remove("active"));
+    if (colorsBox) {
+        colorsBox.addEventListener("click", (e) => {
+            const btn = e.target.closest(".pd-color");
+            if (!btn) return;
 
-        btn.classList.add("active");
+            const url = btn.dataset.imageUrl;
+            const imgId = btn.dataset.imageId;
+
+            // active 갱신
+            colorsBox.querySelectorAll(".pd-color").forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+
+            // 메인 이미지 교체
+            if (url) mainImg.src = url;
+
+            // 선택값 저장
+            selectedImageId.value = imgId || "";
+        });
+    }
+
+    // ===== SIZE 선택: 클릭하면 선택 유지(hover처럼 유지) =====
+    const sizesBox = document.getElementById("pdSizes");
+    const selectedSize = document.getElementById("selectedSize");
+    const helper = document.getElementById("pdHelper");
+    const buyBtn = document.getElementById("pdBuyBtn");
+
+    if (sizesBox) {
+        sizesBox.addEventListener("click", (e) => {
+            const btn = e.target.closest(".pd-size");
+            if (!btn) return;
+            if (btn.classList.contains("is-disabled")) return;
+
+            // 선택 표시
+            sizesBox.querySelectorAll(".pd-size").forEach(b => b.classList.remove("is-selected"));
+            btn.classList.add("is-selected");
+
+            // 선택값 저장
+            selectedSize.value = btn.dataset.size || "";
+            if (helper) helper.textContent = `선택한 사이즈: ${selectedSize.value}`;
+        });
+    }
+
+    // ===== 구매하기: 사이즈 선택 안 하면 막기 =====
+    if (buyBtn) {
+        buyBtn.addEventListener("click", () => {
+            if (!selectedSize.value) {
+                if (helper) helper.textContent = "사이즈를 먼저 선택하세요.";
+                return;
+            }
+            // 결제 연동 전이므로 일단 확인용
+            if (helper) helper.textContent = `구매 준비: COLOR 이미지ID=${selectedImageId.value || "-"}, SIZE=${selectedSize.value}`;
+        });
     }
 </script>
 {% endblock %}
