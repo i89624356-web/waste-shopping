@@ -885,7 +885,7 @@ def admin_inquiry_detail(inquiry_id):
 
 
 # =======================
-# 라우트: 관리자 - 새 상품 추가 (이미지 업로드)
+# 라우트: 관리자 - 새 상품 추가 (여러 이미지 + 사이즈/재고)
 # =======================
 @app.route("/admin/products/new", methods=["GET", "POST"])
 def admin_product_new():
@@ -912,31 +912,32 @@ def admin_product_new():
             flash("가격은 숫자로 입력하세요.", "error")
             return render_template("admin_product_new.html", categories=categories)
 
-        image_file = request.files.get("image")
-        # 예전 필드 호환용. 굳이 안 써도 되지만 남겨두자.
-        image_url = "https://via.placeholder.com/600x800?text=PRODUCT"
-        image_data = None
-        image_mime = None
-
-        if image_file and image_file.filename:
-            # 파일 내용을 그대로 읽어서 DB에 넣기
-            image_data = image_file.read()
-            image_mime = image_file.mimetype or "image/jpeg"
-            # image_url은 일단 빈 문자열로 두거나 placeholder 유지
-            image_url = ""
-
+        # 1) 상품 기본정보 먼저 생성 (이미지는 products 테이블에 저장하지 않음)
         new_id = db_create_product(
             name=name,
             price=price,
-            image_url=image_url,
+            image_url="",  # 이제 의미 거의 없음 (이미지는 product_images로)
             status=status,
             category=category,
             description=description,
-            image_data=image_data,
-            image_mime=image_mime,
+            image_data=None,
+            image_mime=None,
         )
 
-        flash(f"새 상품이 추가되었습니다. (ID: {new_id})", "success")
+        # 2) 여러 이미지 저장 (name="images" multiple)
+        images = request.files.getlist("images")
+        # getlist는 빈 파일도 섞일 수 있어서 filename 있는 것만 저장
+        images = [f for f in images if f and getattr(f, "filename", "")]
+        if images:
+            db_insert_product_images(new_id, images)
+
+        # 3) 사이즈/재고 저장 (name="size_name[]" / "size_stock[]")
+        sizes = request.form.getlist("size_name[]")
+        stocks = request.form.getlist("size_stock[]")
+        if sizes or stocks:
+            db_replace_variants(new_id, sizes, stocks)
+
+        flash("새 상품이 추가되었습니다.", "success")
         return redirect(url_for("admin_products"))
 
     return render_template("admin_product_new.html", categories=categories)
@@ -957,7 +958,7 @@ def admin_product_delete(product_id):
 
 
 # =======================
-# 라우트: 관리자 - 상품 수정
+# 라우트: 관리자 - 상품 수정 (여러 이미지 + 사이즈/재고)
 # =======================
 @app.route("/admin/products/<int:product_id>/edit", methods=["GET", "POST"])
 def admin_product_edit(product_id):
@@ -966,11 +967,15 @@ def admin_product_edit(product_id):
         return redirect(url_for("login"))
 
     categories = ["OUTER", "TOP", "BOTTOM", "ACCESSORIES"]
-    target = db_get_product(product_id)
 
+    # 기존 상품 가져오기
+    target = db_get_product(product_id)
     if not target:
         flash("해당 상품을 찾을 수 없습니다.", "error")
         return redirect(url_for("admin_products"))
+
+    # (선택) 기존 사이즈/재고 목록
+    variants = db_get_variants(product_id)
 
     if request.method == "POST":
         name = request.form.get("name", "").strip()
@@ -985,6 +990,7 @@ def admin_product_edit(product_id):
                 "admin_product_edit.html",
                 product=target,
                 categories=categories,
+                variants=variants,
             )
 
         try:
@@ -995,39 +1001,42 @@ def admin_product_edit(product_id):
                 "admin_product_edit.html",
                 product=target,
                 categories=categories,
+                variants=variants,
             )
 
-        image_file = request.files.get("image")
-        # 기존 image_url 유지 (사실 이제 의미는 거의 없음)
-        image_url = target.get("image_url", "") or ""
-
-        image_data = None
-        image_mime = None
-
-        if image_file and image_file.filename:
-            image_data = image_file.read()
-            image_mime = image_file.mimetype or "image/jpeg"
-            image_url = ""
-
+        # 1) 상품 기본정보 업데이트 (이미지 바이너리는 products에 안 넣음)
         db_update_product(
             product_id=product_id,
             name=name,
             price=price,
-            image_url=image_url,
+            image_url=target.get("image_url", "") or "",
             status=status,
             category=category,
-            description=description or "",
-            image_data=image_data,
-            image_mime=image_mime,
+            description=description,
+            image_data=None,   # products 테이블 이미지 컬럼은 더 이상 사용 안 함
+            image_mime=None,
         )
+
+        # 2) 새로 올린 이미지들 추가 저장 (name="images" multiple)
+        images = request.files.getlist("images")
+        images = [f for f in images if f and getattr(f, "filename", "")]
+        if images:
+            db_insert_product_images(product_id, images)
+
+        # 3) 사이즈/재고 덮어쓰기 (name="size_name[]", "size_stock[]")
+        sizes = request.form.getlist("size_name[]")
+        stocks = request.form.getlist("size_stock[]")
+        db_replace_variants(product_id, sizes, stocks)
 
         flash("상품 정보가 수정되었습니다.", "success")
         return redirect(url_for("admin_products"))
 
+    # GET: 수정 폼 표시
     return render_template(
         "admin_product_edit.html",
         product=target,
         categories=categories,
+        variants=variants,
     )
 
 

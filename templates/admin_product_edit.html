@@ -24,11 +24,52 @@
             </div>
         </label>
 
-        <label class="admin-label">
-            이미지 변경 (선택)
-            <input type="file" name="image" accept="image/*" class="admin-input">
-            <span class="admin-hint">새 파일을 선택하지 않으면 기존 이미지가 유지됩니다.</span>
+        <label class="auth-label">
+            상품 이미지 (여러 장 가능)
+            <input type="file" name="images" multiple accept="image/*" class="auth-input">
         </label>
+
+        <!-- 사이즈 / 재고 -->
+        <label class="admin-label">
+            사이즈 / 재고
+        </label>
+
+        <div id="variantRows">
+            {% for v in variants %}
+            <div class="variant-row" style="display:flex; gap:8px; margin-bottom:6px;">
+                <input name="size_name[]" class="admin-input" style="width:80px;" value="{{ v.size }}"
+                    placeholder="사이즈">
+                <input name="size_stock[]" type="number" min="0" class="admin-input" style="width:120px;"
+                    value="{{ v.stock }}" placeholder="재고">
+                <button type="button" onclick="removeVariantRow(this)">삭제</button>
+            </div>
+            {% endfor %}
+        </div>
+
+        <button type="button" onclick="addVariantRow()" style="margin-top:8px;">
+            + 사이즈 추가
+        </button>
+
+        <script>
+            function addVariantRow() {
+                const box = document.getElementById("variantRows");
+                const row = document.createElement("div");
+                row.className = "variant-row";
+                row.style.display = "flex";
+                row.style.gap = "8px";
+                row.style.marginBottom = "6px";
+                row.innerHTML = `
+                <input name="size_name[]" class="admin-input" style="width:80px;" placeholder="사이즈">
+                <input name="size_stock[]" type="number" min="0" class="admin-input" style="width:120px;" value="0" placeholder="재고">
+                <button type="button" onclick="removeVariantRow(this)">삭제</button>
+            `;
+                box.appendChild(row);
+            }
+
+            function removeVariantRow(btn) {
+                btn.parentElement.remove();
+            }
+        </script>
 
         <label class="admin-label">
             카테고리
