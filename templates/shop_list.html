@@ -36,13 +36,12 @@
             </div>
         </a>
 
-        {% if p.status == "OUT_OF_STOCK" %}
+        {% if p.total_stock == 0 %}
         <div class="status out">OUT OF STOCK</div>
         {% else %}
-        <div class="price">
-            KRW {{ "{:,}".format(p.price) }}
-        </div>
+        <div class="price">KRW {{ "{:,}".format(p.price) }}</div>
         {% endif %}
+
     </article>
     {% endfor %}
 </section>

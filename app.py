@@ -45,12 +45,11 @@ if not DATABASE_URL:
 
 PRODUCT_FILE = os.path.join(BASE_DIR, "products.json")
 
-# 관리자 이메일 목록
 ADMIN_EMAILS = {"022wasted@gmail.com", "i89624356@gmail.com"}
 
 
 # =======================
-# DB 관련 함수 (PostgreSQL)
+# DB 관련 함수
 # =======================
 def get_db():
     if "db" not in g:
@@ -69,6 +68,10 @@ def close_db(exception):
 
 def now_kst_str():
     return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def now_kst_iso():
+    return datetime.now(KST).isoformat(timespec="seconds")
 
 
 def init_db():
@@ -106,6 +109,7 @@ def init_db():
     cur.execute("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS replied_at TEXT")
 
     # ---------- products ----------
+    # ✅ status 컬럼 없음
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS products (
@@ -123,7 +127,7 @@ def init_db():
     cur.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS sort_order INTEGER")
     cur.execute("UPDATE products SET sort_order = id WHERE sort_order IS NULL")
 
-    # (호환용) products에 남아있을 수 있는 옛 이미지 컬럼
+    # (구버전 호환: 남겨둬도 무방)
     cur.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS image_data BYTEA")
     cur.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS image_mime TEXT")
 
@@ -199,30 +203,44 @@ def migrate_products_from_json_if_needed():
 
 
 # =======================
-# products 헬퍼 함수 (DB)
+# products 헬퍼 (DB)
 # =======================
 def db_get_products(category: str | None = None):
+    """
+    ✅ status 제거
+    ✅ 목록에서 품절 표시를 계속하려고 total_stock 계산(variants 합)
+    - variants가 없으면 total_stock=0으로 취급(=품절)
+    """
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     if category and category != "ALL":
         cur.execute(
             """
-            SELECT id, name, price, image_url, category, description
-            FROM products
-            WHERE category = %s
-            ORDER BY sort_order ASC, id DESC
+            SELECT
+                p.id, p.name, p.price, p.image_url, p.category, p.description,
+                COALESCE(SUM(v.stock), 0) AS total_stock
+            FROM products p
+            LEFT JOIN product_variants v ON v.product_id = p.id
+            WHERE p.category = %s
+            GROUP BY p.id, p.name, p.price, p.image_url, p.category, p.description
+            ORDER BY p.sort_order ASC, p.id DESC
             """,
             (category,),
         )
     else:
         cur.execute(
             """
-            SELECT id, name, price, image_url, category, description
-            FROM products
-            ORDER BY sort_order ASC, id DESC
+            SELECT
+                p.id, p.name, p.price, p.image_url, p.category, p.description,
+                COALESCE(SUM(v.stock), 0) AS total_stock
+            FROM products p
+            LEFT JOIN product_variants v ON v.product_id = p.id
+            GROUP BY p.id, p.name, p.price, p.image_url, p.category, p.description
+            ORDER BY p.sort_order ASC, p.id DESC
             """
         )
+
     return cur.fetchall()
 
 
@@ -264,21 +282,39 @@ def db_create_product(name, price, image_url, category, description, image_data=
     return new_id
 
 
-def db_update_product(product_id, name, price, image_url, category, description):
+def db_update_product(product_id, name, price, image_url, category, description, image_data=None, image_mime=None):
     db = get_db()
     cur = db.cursor()
-    cur.execute(
-        """
-        UPDATE products
-        SET name = %s,
-            price = %s,
-            image_url = %s,
-            category = %s,
-            description = %s
-        WHERE id = %s
-        """,
-        (name, price, image_url, category, description, product_id),
-    )
+
+    if image_data is not None and image_mime is not None:
+        cur.execute(
+            """
+            UPDATE products
+            SET name = %s,
+                price = %s,
+                image_url = %s,
+                category = %s,
+                description = %s,
+                image_data = %s,
+                image_mime = %s
+            WHERE id = %s
+            """,
+            (name, price, image_url, category, description, image_data, image_mime, product_id),
+        )
+    else:
+        cur.execute(
+            """
+            UPDATE products
+            SET name = %s,
+                price = %s,
+                image_url = %s,
+                category = %s,
+                description = %s
+            WHERE id = %s
+            """,
+            (name, price, image_url, category, description, product_id),
+        )
+
     db.commit()
 
 
@@ -289,7 +325,24 @@ def db_delete_product(product_id):
     db.commit()
 
 
-# ---------- images ----------
+def db_delete_user_and_related(user_id: int) -> bool:
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT id, email FROM users WHERE id = %s", (user_id,))
+    user = cur.fetchone()
+
+    if not user:
+        return False
+    if user["email"] in ADMIN_EMAILS:
+        return False
+
+    cur2 = db.cursor()
+    cur2.execute("DELETE FROM inquiries WHERE user_id = %s", (user_id,))
+    cur2.execute("DELETE FROM users WHERE id = %s", (user_id,))
+    db.commit()
+    return True
+
+
 def db_get_product_images(product_id: int):
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -308,9 +361,12 @@ def db_get_product_images(product_id: int):
 def db_insert_product_images(product_id: int, files):
     db = get_db()
     cur = db.cursor()
-    ts = now_kst_str()
+    ts = now_kst_iso()
 
-    cur.execute("SELECT COALESCE(MAX(sort_order), 0) FROM product_images WHERE product_id=%s", (product_id,))
+    cur.execute(
+        "SELECT COALESCE(MAX(sort_order), 0) FROM product_images WHERE product_id=%s",
+        (product_id,),
+    )
     order = cur.fetchone()[0]
 
     for f in files:
@@ -330,14 +386,6 @@ def db_insert_product_images(product_id: int, files):
     db.commit()
 
 
-def db_delete_product_image(image_id: int, product_id: int):
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("DELETE FROM product_images WHERE id=%s AND product_id=%s", (image_id, product_id))
-    db.commit()
-
-
-# ---------- variants ----------
 def db_get_variants(product_id: int):
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -358,7 +406,7 @@ def db_replace_variants(product_id: int, sizes: list[str], stocks: list[str]):
     cur = db.cursor()
     cur.execute("DELETE FROM product_variants WHERE product_id=%s", (product_id,))
 
-    ts = now_kst_str()
+    ts = now_kst_iso()
     for s, st in zip(sizes, stocks):
         s = (s or "").strip()
         if not s:
@@ -367,7 +415,6 @@ def db_replace_variants(product_id: int, sizes: list[str], stocks: list[str]):
             stock_i = int(st)
         except Exception:
             stock_i = 0
-
         cur.execute(
             """
             INSERT INTO product_variants (product_id, size, stock, created_at)
@@ -377,24 +424,6 @@ def db_replace_variants(product_id: int, sizes: list[str], stocks: list[str]):
         )
 
     db.commit()
-
-
-# ---------- users delete ----------
-def db_delete_user_and_related(user_id: int) -> bool:
-    db = get_db()
-    cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("SELECT id, email FROM users WHERE id = %s", (user_id,))
-    user = cur.fetchone()
-    if not user:
-        return False
-    if user["email"] in ADMIN_EMAILS:
-        return False
-
-    cur2 = db.cursor()
-    cur2.execute("DELETE FROM inquiries WHERE user_id = %s", (user_id,))
-    cur2.execute("DELETE FROM users WHERE id = %s", (user_id,))
-    db.commit()
-    return True
 
 
 # =======================
@@ -419,8 +448,14 @@ def inject_user():
 def shop_list():
     category = request.args.get("category", "ALL")
     products = db_get_products(category)
+
     categories = ["ALL", "OUTER", "TOP", "BOTTOM", "ACCESSORIES"]
-    return render_template("shop_list.html", products=products, current_category=category, categories=categories)
+    return render_template(
+        "shop_list.html",
+        products=products,
+        current_category=category,
+        categories=categories,
+    )
 
 
 @app.route("/")
@@ -429,7 +464,7 @@ def index():
 
 
 # =======================
-# 라우트: 회원가입 / 로그인 / 로그아웃
+# 라우트: 회원가입
 # =======================
 @app.route("/register", methods=["GET", "POST"])
 def register():
@@ -461,18 +496,23 @@ def register():
 
         password_hash = generate_password_hash(password)
         now = now_kst_str()
+
         cur2 = db.cursor()
         cur2.execute(
             "INSERT INTO users (email, password, name, created_at) VALUES (%s, %s, %s, %s)",
             (email, password_hash, name, now),
         )
         db.commit()
+
         flash("회원가입이 완료되었습니다. 로그인 해주세요.", "success")
         return redirect(url_for("login"))
 
     return render_template("register.html")
 
 
+# =======================
+# 라우트: 로그인
+# =======================
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if session.get("user_id"):
@@ -497,13 +537,15 @@ def login():
         session["user_id"] = user["id"]
         session["user_email"] = user["email"]
         session["user_name"] = user["name"]
-
         flash("로그인 되었습니다.", "success")
         return redirect(url_for("shop_list"))
 
     return render_template("login.html")
 
 
+# =======================
+# 라우트: 로그아웃
+# =======================
 @app.route("/logout")
 def logout():
     session.clear()
@@ -535,9 +577,9 @@ def account_delete():
     return render_template("account_delete.html")
 
 
-# =======================
-# 라우트: 사용자 - 고객센터
-# =======================
+# ============================================
+# 라우트: 사용자 - 고객센터 문의
+# ============================================
 @app.route("/support", methods=["GET", "POST"])
 def support():
     if not session.get("user_id"):
@@ -610,7 +652,7 @@ def support_detail(inquiry_id):
 
 
 # =======================
-# 라우트: 관리자 - 상품/유저/문의
+# 관리자 - 상품 목록
 # =======================
 @app.route("/admin/products")
 def admin_products():
@@ -620,9 +662,13 @@ def admin_products():
 
     products = db_get_products(category=None)
     categories = ["OUTER", "TOP", "BOTTOM", "ACCESSORIES"]
+
     return render_template("admin_products.html", products=products, categories=categories)
 
 
+# =======================
+# 관리자 - 회원 목록
+# =======================
 @app.route("/admin/users")
 def admin_users():
     if not session.get("user_id") or not is_admin():
@@ -633,6 +679,7 @@ def admin_users():
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("SELECT id, email, name, created_at FROM users ORDER BY created_at DESC")
     users = cur.fetchall()
+
     return render_template("admin_users.html", users=users)
 
 
@@ -647,9 +694,13 @@ def admin_user_delete(user_id):
         flash("관리자 계정이거나 존재하지 않는 계정이라 삭제할 수 없습니다.", "error")
     else:
         flash("해당 회원이 탈퇴 처리되었습니다.", "success")
+
     return redirect(url_for("admin_users"))
 
 
+# =======================
+# 관리자 - 문의 목록/상세
+# =======================
 @app.route("/admin/inquiries")
 def admin_inquiries():
     if not session.get("user_id") or not is_admin():
@@ -661,7 +712,8 @@ def admin_inquiries():
     cur.execute(
         """
         SELECT
-            i.id, i.subject, i.message, i.status, i.created_at, i.admin_reply, i.replied_at,
+            i.id, i.subject, i.message, i.status, i.created_at,
+            i.admin_reply, i.replied_at,
             u.email AS user_email, u.name AS user_name
         FROM inquiries i
         JOIN users u ON i.user_id = u.id
@@ -669,6 +721,7 @@ def admin_inquiries():
         """
     )
     rows = cur.fetchall()
+
     return render_template("admin_inquiries.html", inquiries=rows)
 
 
@@ -687,6 +740,7 @@ def admin_inquiry_detail(inquiry_id):
         now = now_kst_str()
 
         cur2 = db.cursor()
+
         if reply_text:
             cur2.execute(
                 """
@@ -698,7 +752,10 @@ def admin_inquiry_detail(inquiry_id):
             )
 
         if action == "close":
-            cur2.execute("UPDATE inquiries SET status = 'CLOSED' WHERE id = %s", (inquiry_id,))
+            cur2.execute(
+                "UPDATE inquiries SET status = 'CLOSED' WHERE id = %s",
+                (inquiry_id,),
+            )
 
         db.commit()
         flash("문의 답변이 저장되었습니다.", "success")
@@ -707,7 +764,8 @@ def admin_inquiry_detail(inquiry_id):
     cur.execute(
         """
         SELECT
-            i.id, i.subject, i.message, i.status, i.created_at, i.admin_reply, i.replied_at,
+            i.id, i.subject, i.message, i.status, i.created_at,
+            i.admin_reply, i.replied_at,
             u.email AS user_email, u.name AS user_name
         FROM inquiries i
         JOIN users u ON i.user_id = u.id
@@ -723,7 +781,7 @@ def admin_inquiry_detail(inquiry_id):
 
 
 # =======================
-# 라우트: 관리자 - 상품 추가/수정/삭제
+# 관리자 - 새 상품 추가 (여러 이미지 + 사이즈/재고)
 # =======================
 @app.route("/admin/products/new", methods=["GET", "POST"])
 def admin_product_new():
@@ -752,7 +810,7 @@ def admin_product_new():
         new_id = db_create_product(
             name=name,
             price=price,
-            image_url="",
+            image_url="",  # 대표 이미지는 product_images의 첫 번째로
             category=category,
             description=description,
             image_data=None,
@@ -793,12 +851,12 @@ def admin_product_edit(product_id):
         return redirect(url_for("login"))
 
     categories = ["OUTER", "TOP", "BOTTOM", "ACCESSORIES"]
+
     target = db_get_product(product_id)
     if not target:
         flash("해당 상품을 찾을 수 없습니다.", "error")
         return redirect(url_for("admin_products"))
 
-    images = db_get_product_images(product_id)
     variants = db_get_variants(product_id)
 
     if request.method == "POST":
@@ -809,13 +867,13 @@ def admin_product_edit(product_id):
 
         if not name:
             flash("상품명을 입력하세요.", "error")
-            return render_template("admin_product_edit.html", product=target, categories=categories, variants=variants, images=images)
+            return render_template("admin_product_edit.html", product=target, categories=categories, variants=variants)
 
         try:
             price = int(price_raw) if price_raw else 0
         except ValueError:
             flash("가격은 숫자로 입력하세요.", "error")
-            return render_template("admin_product_edit.html", product=target, categories=categories, variants=variants, images=images)
+            return render_template("admin_product_edit.html", product=target, categories=categories, variants=variants)
 
         db_update_product(
             product_id=product_id,
@@ -824,38 +882,25 @@ def admin_product_edit(product_id):
             image_url=target.get("image_url", "") or "",
             category=category,
             description=description,
+            image_data=None,
+            image_mime=None,
         )
 
-        new_images = request.files.getlist("images")
-        new_images = [f for f in new_images if f and getattr(f, "filename", "")]
-        if new_images:
-            db_insert_product_images(product_id, new_images)
+        images = request.files.getlist("images")
+        images = [f for f in images if f and getattr(f, "filename", "")]
+        if images:
+            db_insert_product_images(product_id, images)
 
         sizes = request.form.getlist("size_name[]")
         stocks = request.form.getlist("size_stock[]")
         db_replace_variants(product_id, sizes, stocks)
 
         flash("상품 정보가 수정되었습니다.", "success")
-        return redirect(url_for("admin_product_edit", product_id=product_id))
+        return redirect(url_for("admin_products"))
 
-    return render_template("admin_product_edit.html", product=target, categories=categories, variants=variants, images=images)
-
-
-# ✅ 이미지 개별 삭제 라우트 (이번에 추가)
-@app.route("/admin/products/<int:product_id>/images/<int:image_id>/delete", methods=["POST"])
-def admin_product_image_delete(product_id, image_id):
-    if not session.get("user_id") or not is_admin():
-        flash("관리자 권한이 필요합니다.", "error")
-        return redirect(url_for("login"))
-
-    db_delete_product_image(image_id=image_id, product_id=product_id)
-    flash("이미지가 삭제되었습니다.", "success")
-    return redirect(url_for("admin_product_edit", product_id=product_id))
+    return render_template("admin_product_edit.html", product=target, categories=categories, variants=variants)
 
 
-# =======================
-# 라우트: 관리자 - 상품 순서 재정렬 (AJAX)
-# =======================
 @app.route("/admin/products/reorder", methods=["POST"])
 def admin_products_reorder():
     if not session.get("user_id") or not is_admin():
@@ -880,7 +925,7 @@ def admin_products_reorder():
 
 
 # =======================
-# 라우트: 상품 상세 + 이미지 응답
+# 상품 상세 페이지
 # =======================
 @app.route("/product/<int:product_id>")
 def product_detail(product_id):
@@ -890,9 +935,13 @@ def product_detail(product_id):
 
     images = db_get_product_images(product_id)
     variants = db_get_variants(product_id)
+
     return render_template("product_detail.html", product=product, images=images, variants=variants)
 
 
+# =======================
+# 이미지 제공
+# =======================
 @app.route("/product_image/<int:product_id>")
 def product_image(product_id):
     db = get_db()
@@ -909,15 +958,14 @@ def product_image(product_id):
     )
     row = cur.fetchone()
     if not row:
-        # 이미지 없으면 placeholder로 (원하면 경로 바꿔도 됨)
-        return redirect("https://via.placeholder.com/600x800?text=NO+IMAGE")
+        abort(404)
 
     data, mime, url = row
     if data:
         return Response(data, mimetype=mime or "image/jpeg")
     if url:
         return redirect(url)
-    return redirect("https://via.placeholder.com/600x800?text=NO+IMAGE")
+    abort(404)
 
 
 @app.route("/product_image_by_id/<int:image_id>")
