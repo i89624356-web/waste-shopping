@@ -20,7 +20,6 @@ from flask import (
 )
 
 from werkzeug.security import generate_password_hash, check_password_hash
-from werkzeug.utils import secure_filename
 
 KST = timezone(timedelta(hours=9))
 
@@ -35,10 +34,8 @@ app = Flask(
     static_folder=os.path.join(BASE_DIR, "static"),
 )
 
-# 세션에 쓸 비밀키 (실서비스에서는 환경변수로 빼야 함)
 app.secret_key = "dev-secret-key-change-this"
 
-# PostgreSQL 연결 문자열 (Neon / Render 환경변수에서 읽기)
 DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError(
@@ -46,21 +43,9 @@ if not DATABASE_URL:
         "Neon의 Postgres connection string을 Render Environment에 DATABASE_URL로 넣어주세요."
     )
 
-# 예전 products.json (있으면 초기 데이터로만 사용)
 PRODUCT_FILE = os.path.join(BASE_DIR, "products.json")
 
-# 이미지 업로드 설정
-UPLOAD_FOLDER = os.path.join(BASE_DIR, "static", "uploads")
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
-
-
-def allowed_file(filename: str) -> bool:
-    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
-
-
-# 관리자 이메일 목록 (여기에 있는 이메일로 가입하면 관리자 취급)
+# 관리자 이메일 목록
 ADMIN_EMAILS = {"022wasted@gmail.com", "i89624356@gmail.com"}
 
 
@@ -70,7 +55,7 @@ ADMIN_EMAILS = {"022wasted@gmail.com", "i89624356@gmail.com"}
 def get_db():
     if "db" not in g:
         conn = psycopg2.connect(DATABASE_URL)
-        conn.autocommit = False  # 명시적으로 commit 호출
+        conn.autocommit = False
         g.db = conn
     return g.db
 
@@ -82,8 +67,11 @@ def close_db(exception):
         db.close()
 
 
+def now_kst_str():
+    return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+
+
 def init_db():
-    """users, inquiries, products 테이블 생성 + inquiries 컬럼 보정"""
     db = get_db()
     cur = db.cursor()
 
@@ -114,16 +102,8 @@ def init_db():
         )
         """
     )
-
-    # inquiries 보조 컬럼 (있으면 추가 안 됨)
-    cur.execute(
-        "ALTER TABLE inquiries "
-        "ADD COLUMN IF NOT EXISTS admin_reply TEXT"
-    )
-    cur.execute(
-        "ALTER TABLE inquiries "
-        "ADD COLUMN IF NOT EXISTS replied_at TEXT"
-    )
+    cur.execute("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS admin_reply TEXT")
+    cur.execute("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS replied_at TEXT")
 
     # ---------- products ----------
     cur.execute(
@@ -133,7 +113,6 @@ def init_db():
             name TEXT NOT NULL,
             price INTEGER NOT NULL,
             image_url TEXT NOT NULL,
-            status TEXT NOT NULL,
             category TEXT NOT NULL,
             description TEXT,
             created_at TEXT NOT NULL
@@ -141,72 +120,56 @@ def init_db():
         """
     )
 
-    # 정렬용 sort_order 컬럼 (없으면 추가)
-    cur.execute(
-        "ALTER TABLE products "
-        "ADD COLUMN IF NOT EXISTS sort_order INTEGER"
-    )
+    cur.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS sort_order INTEGER")
+    cur.execute("UPDATE products SET sort_order = id WHERE sort_order IS NULL")
 
-    # sort_order 가 NULL 인 행은 id 기준으로 기본값 채우기
-    cur.execute(
-        "UPDATE products SET sort_order = id WHERE sort_order IS NULL"
-    )
-
-    # 이미지 바이너리 + MIME 타입
-    cur.execute(
-        "ALTER TABLE products "
-        "ADD COLUMN IF NOT EXISTS image_data BYTEA"
-    )
-    cur.execute(
-        "ALTER TABLE products "
-        "ADD COLUMN IF NOT EXISTS image_mime TEXT"
-    )
+    # (호환용) products에 남아있을 수 있는 옛 이미지 컬럼
+    cur.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS image_data BYTEA")
+    cur.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS image_mime TEXT")
 
     # ---------- product_images ----------
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS product_images (
-        id SERIAL PRIMARY KEY,
-        product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-        image_data BYTEA,
-        image_mime TEXT,
-        image_url TEXT,
-        sort_order INTEGER NOT NULL DEFAULT 1,
-        created_at TEXT NOT NULL
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS product_images (
+            id SERIAL PRIMARY KEY,
+            product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+            image_data BYTEA,
+            image_mime TEXT,
+            image_url TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL
+        )
+        """
     )
-    """)
 
     # ---------- product_variants ----------
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS product_variants (
-        id SERIAL PRIMARY KEY,
-        product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-        size TEXT NOT NULL,
-        stock INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS product_variants (
+            id SERIAL PRIMARY KEY,
+            product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+            size TEXT NOT NULL,
+            stock INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
+        )
+        """
     )
-    """)
 
     db.commit()
-
-    # products 테이블이 비어 있고, products.json 이 있으면 한번만 마이그레이션
     migrate_products_from_json_if_needed()
 
 
 def migrate_products_from_json_if_needed():
-    """DB products 테이블이 비어 있고 products.json이 있으면 한 번만 옮겨담기"""
     db = get_db()
     cur = db.cursor()
 
-    # 이미 데이터가 있으면 패스
     cur.execute("SELECT COUNT(*) FROM products")
-    count = cur.fetchone()[0]
-    if count > 0:
+    if cur.fetchone()[0] > 0:
         return
 
     if not os.path.exists(PRODUCT_FILE):
         return
 
-    # JSON 읽어서 insert
     with open(PRODUCT_FILE, "r", encoding="utf-8") as f:
         try:
             products = json.load(f)
@@ -216,21 +179,20 @@ def migrate_products_from_json_if_needed():
     if not products:
         return
 
-    now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+    now = now_kst_str()
     for p in products:
         name = p.get("name", "")
         price = int(p.get("price", 0))
         image_url = p.get("image_url") or "https://via.placeholder.com/600x800?text=PRODUCT"
-        status = p.get("status") or "IN_STOCK"
         category = p.get("category") or "TOP"
         description = p.get("description") or ""
 
         cur.execute(
             """
-            INSERT INTO products (name, price, image_url, status, category, description, created_at, sort_order)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO products (name, price, image_url, category, description, created_at, sort_order)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             """,
-            (name, price, image_url, status, category, description, now, p.get("id", 0)),
+            (name, price, image_url, category, description, now, p.get("id", 0)),
         )
 
     db.commit()
@@ -240,14 +202,13 @@ def migrate_products_from_json_if_needed():
 # products 헬퍼 함수 (DB)
 # =======================
 def db_get_products(category: str | None = None):
-    """카테고리 필터 포함한 상품 목록 (sort_order 기준 정렬)"""
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     if category and category != "ALL":
         cur.execute(
             """
-            SELECT id, name, price, image_url, status, category, description
+            SELECT id, name, price, image_url, category, description
             FROM products
             WHERE category = %s
             ORDER BY sort_order ASC, id DESC
@@ -257,12 +218,11 @@ def db_get_products(category: str | None = None):
     else:
         cur.execute(
             """
-            SELECT id, name, price, image_url, status, category, description
+            SELECT id, name, price, image_url, category, description
             FROM products
             ORDER BY sort_order ASC, id DESC
             """
         )
-
     return cur.fetchall()
 
 
@@ -271,7 +231,7 @@ def db_get_product(product_id: int):
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute(
         """
-        SELECT id, name, price, image_url, status, category, description
+        SELECT id, name, price, image_url, category, description
         FROM products
         WHERE id = %s
         """,
@@ -280,73 +240,45 @@ def db_get_product(product_id: int):
     return cur.fetchone()
 
 
-def db_create_product(name, price, image_url, status, category, description,
-                      image_data=None, image_mime=None):
+def db_create_product(name, price, image_url, category, description, image_data=None, image_mime=None):
     db = get_db()
     cur = db.cursor()
 
-    # 정렬용 sort_order
     cur.execute("SELECT COALESCE(MAX(sort_order), 0) FROM products")
-    max_order = cur.fetchone()[0]
-    new_order = max_order + 1
+    new_order = cur.fetchone()[0] + 1
 
-    now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+    now = now_kst_str()
     cur.execute(
         """
         INSERT INTO products (
-            name, price, image_url, status, category, description,
+            name, price, image_url, category, description,
             created_at, sort_order, image_data, image_mime
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id
         """,
-        (name, price, image_url, status, category, description,
-         now, new_order, image_data, image_mime),
+        (name, price, image_url, category, description, now, new_order, image_data, image_mime),
     )
     new_id = cur.fetchone()[0]
     db.commit()
     return new_id
 
 
-def db_update_product(product_id, name, price, image_url, status, category, description,
-                      image_data=None, image_mime=None):
+def db_update_product(product_id, name, price, image_url, category, description):
     db = get_db()
     cur = db.cursor()
-
-    if image_data is not None and image_mime is not None:
-        # 새 이미지까지 포함해서 변경
-        cur.execute(
-            """
-            UPDATE products
-            SET name = %s,
-                price = %s,
-                image_url = %s,
-                status = %s,
-                category = %s,
-                description = %s,
-                image_data = %s,
-                image_mime = %s
-            WHERE id = %s
-            """,
-            (name, price, image_url, status, category, description,
-             image_data, image_mime, product_id),
-        )
-    else:
-        # 텍스트 정보만 변경 (이미지는 그대로 유지)
-        cur.execute(
-            """
-            UPDATE products
-            SET name = %s,
-                price = %s,
-                image_url = %s,
-                status = %s,
-                category = %s,
-                description = %s
-            WHERE id = %s
-            """,
-            (name, price, image_url, status, category, description, product_id),
-        )
-
+    cur.execute(
+        """
+        UPDATE products
+        SET name = %s,
+            price = %s,
+            image_url = %s,
+            category = %s,
+            description = %s
+        WHERE id = %s
+        """,
+        (name, price, image_url, category, description, product_id),
+    )
     db.commit()
 
 
@@ -357,73 +289,46 @@ def db_delete_product(product_id):
     db.commit()
 
 
-def db_delete_user_and_related(user_id: int) -> bool:
-    """
-    회원 1명을 탈퇴 처리한다.
-    - inquiries: 해당 user_id가 남긴 문의 모두 삭제
-    - users: 해당 회원 삭제
-    - 관리자(ADMIN_EMAILS)는 보호 차원에서 삭제 금지 → False 반환
-    """
-    db = get_db()
-    # 이메일 먼저 조회
-    cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("SELECT id, email FROM users WHERE id = %s", (user_id,))
-    user = cur.fetchone()
-
-    if not user:
-        return False
-
-    # 관리자 계정은 삭제 금지
-    if user["email"] in ADMIN_EMAILS:
-        return False
-
-    # 실제 삭제
-    cur2 = db.cursor()
-    # 1) 해당 회원이 남긴 문의 삭제
-    cur2.execute("DELETE FROM inquiries WHERE user_id = %s", (user_id,))
-    # 2) 회원 삭제
-    cur2.execute("DELETE FROM users WHERE id = %s", (user_id,))
-    db.commit()
-    return True
-
-
-def now_kst_iso():
-    return datetime.now(KST).isoformat(timespec="seconds")
-
+# ---------- images ----------
 def db_get_product_images(product_id: int):
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("""
+    cur.execute(
+        """
         SELECT id, sort_order
         FROM product_images
         WHERE product_id = %s
         ORDER BY sort_order ASC, id ASC
-    """, (product_id,))
+        """,
+        (product_id,),
+    )
     return cur.fetchall()
 
+
 def db_insert_product_images(product_id: int, files):
-    """files: request.files.getlist('images')"""
     db = get_db()
     cur = db.cursor()
-    ts = now_kst_iso()
+    ts = now_kst_str()
 
-    # 기존 이미지 max order
     cur.execute("SELECT COALESCE(MAX(sort_order), 0) FROM product_images WHERE product_id=%s", (product_id,))
-    base = cur.fetchone()[0]
+    order = cur.fetchone()[0]
 
-    order = base
     for f in files:
-        if not f or not f.filename:
+        if not f or not getattr(f, "filename", ""):
             continue
         data = f.read()
         mime = f.mimetype or "image/jpeg"
         order += 1
-        cur.execute("""
+        cur.execute(
+            """
             INSERT INTO product_images (product_id, image_data, image_mime, image_url, sort_order, created_at)
             VALUES (%s, %s, %s, %s, %s, %s)
-        """, (product_id, data, mime, "", order, ts))
+            """,
+            (product_id, data, mime, "", order, ts),
+        )
 
     db.commit()
+
 
 def db_delete_product_image(image_id: int, product_id: int):
     db = get_db()
@@ -431,24 +336,29 @@ def db_delete_product_image(image_id: int, product_id: int):
     cur.execute("DELETE FROM product_images WHERE id=%s AND product_id=%s", (image_id, product_id))
     db.commit()
 
+
+# ---------- variants ----------
 def db_get_variants(product_id: int):
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("""
+    cur.execute(
+        """
         SELECT id, size, stock
         FROM product_variants
         WHERE product_id=%s
         ORDER BY id ASC
-    """, (product_id,))
+        """,
+        (product_id,),
+    )
     return cur.fetchall()
 
+
 def db_replace_variants(product_id: int, sizes: list[str], stocks: list[str]):
-    """관리자 폼에서 넘어온 사이즈/재고를 통째로 갈아끼우는 방식(간단, 안전)"""
     db = get_db()
     cur = db.cursor()
     cur.execute("DELETE FROM product_variants WHERE product_id=%s", (product_id,))
 
-    ts = now_kst_iso()
+    ts = now_kst_str()
     for s, st in zip(sizes, stocks):
         s = (s or "").strip()
         if not s:
@@ -457,25 +367,45 @@ def db_replace_variants(product_id: int, sizes: list[str], stocks: list[str]):
             stock_i = int(st)
         except Exception:
             stock_i = 0
-        cur.execute("""
+
+        cur.execute(
+            """
             INSERT INTO product_variants (product_id, size, stock, created_at)
             VALUES (%s, %s, %s, %s)
-        """, (product_id, s.upper(), stock_i, ts))
+            """,
+            (product_id, s.upper(), stock_i, ts),
+        )
 
     db.commit()
+
+
+# ---------- users delete ----------
+def db_delete_user_and_related(user_id: int) -> bool:
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT id, email FROM users WHERE id = %s", (user_id,))
+    user = cur.fetchone()
+    if not user:
+        return False
+    if user["email"] in ADMIN_EMAILS:
+        return False
+
+    cur2 = db.cursor()
+    cur2.execute("DELETE FROM inquiries WHERE user_id = %s", (user_id,))
+    cur2.execute("DELETE FROM users WHERE id = %s", (user_id,))
+    db.commit()
+    return True
 
 
 # =======================
 # 템플릿 공통 컨텍스트
 # =======================
 def is_admin():
-    email = session.get("user_email")
-    return email in ADMIN_EMAILS
+    return session.get("user_email") in ADMIN_EMAILS
 
 
 @app.context_processor
 def inject_user():
-    # 템플릿 어디서나 current_user_email, is_admin 사용 가능
     return {
         "current_user_email": session.get("user_email"),
         "is_admin": is_admin(),
@@ -489,25 +419,17 @@ def inject_user():
 def shop_list():
     category = request.args.get("category", "ALL")
     products = db_get_products(category)
-
     categories = ["ALL", "OUTER", "TOP", "BOTTOM", "ACCESSORIES"]
-
-    return render_template(
-        "shop_list.html",
-        products=products,
-        current_category=category,
-        categories=categories,
-    )
+    return render_template("shop_list.html", products=products, current_category=category, categories=categories)
 
 
 @app.route("/")
 def index():
-    # 그냥 / 로 접근하면 /shop으로
     return redirect(url_for("shop_list"))
 
 
 # =======================
-# 라우트: 회원가입
+# 라우트: 회원가입 / 로그인 / 로그아웃
 # =======================
 @app.route("/register", methods=["GET", "POST"])
 def register():
@@ -520,49 +442,37 @@ def register():
         password = request.form.get("password", "")
         password2 = request.form.get("password2", "")
 
-        errors = []
-
         if not email:
-            errors.append("이메일을 입력하세요.")
+            flash("이메일을 입력하세요.", "error")
+            return render_template("register.html")
         if not password:
-            errors.append("비밀번호를 입력하세요.")
+            flash("비밀번호를 입력하세요.", "error")
+            return render_template("register.html")
         if password != password2:
-            errors.append("비밀번호 확인이 일치하지 않습니다.")
-
-        if errors:
-            flash(errors[0], "error")
+            flash("비밀번호 확인이 일치하지 않습니다.", "error")
             return render_template("register.html")
 
         db = get_db()
         cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-        # 이메일 중복 체크
         cur.execute("SELECT id FROM users WHERE email = %s", (email,))
-        existing = cur.fetchone()
-        if existing:
+        if cur.fetchone():
             flash("이미 가입된 이메일입니다.", "error")
             return render_template("register.html")
 
         password_hash = generate_password_hash(password)
-        now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
-
+        now = now_kst_str()
         cur2 = db.cursor()
         cur2.execute(
-            "INSERT INTO users (email, password, name, created_at) "
-            "VALUES (%s, %s, %s, %s)",
+            "INSERT INTO users (email, password, name, created_at) VALUES (%s, %s, %s, %s)",
             (email, password_hash, name, now),
         )
         db.commit()
-
         flash("회원가입이 완료되었습니다. 로그인 해주세요.", "success")
         return redirect(url_for("login"))
 
     return render_template("register.html")
 
 
-# =======================
-# 라우트: 로그인
-# =======================
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if session.get("user_id"):
@@ -580,7 +490,6 @@ def login():
         if not user:
             flash("존재하지 않는 이메일입니다.", "error")
             return render_template("login.html")
-
         if not check_password_hash(user["password"], password):
             flash("비밀번호가 올바르지 않습니다.", "error")
             return render_template("login.html")
@@ -595,9 +504,6 @@ def login():
     return render_template("login.html")
 
 
-# =======================
-# 라우트: 로그아웃
-# =======================
 @app.route("/logout")
 def logout():
     session.clear()
@@ -622,18 +528,16 @@ def account_delete():
             flash("관리자 계정이거나 존재하지 않는 계정이라 탈퇴할 수 없습니다.", "error")
             return redirect(url_for("shop_list"))
 
-        # 세션 정리
         session.clear()
         flash("회원 탈퇴가 완료되었습니다.", "success")
         return redirect(url_for("shop_list"))
 
-    # GET: 확인 페이지
     return render_template("account_delete.html")
 
 
-# ============================================
-# 라우트: 사용자 - 고객센터 문의 작성 및 조회
-# ============================================
+# =======================
+# 라우트: 사용자 - 고객센터
+# =======================
 @app.route("/support", methods=["GET", "POST"])
 def support():
     if not session.get("user_id"):
@@ -646,7 +550,6 @@ def support():
 
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    # POST: 문의 저장
     if request.method == "POST":
         subject = request.form.get("subject", "").strip()
         message = request.form.get("message", "").strip()
@@ -654,7 +557,7 @@ def support():
         if not subject or not message:
             flash("제목과 내용을 모두 입력하세요.", "error")
         else:
-            now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+            now = now_kst_str()
             cur2 = db.cursor()
             cur2.execute(
                 """
@@ -667,7 +570,6 @@ def support():
             flash("문의가 접수되었습니다.", "success")
             return redirect(url_for("support"))
 
-    # GET: 내가 보낸 문의 목록
     cur.execute(
         """
         SELECT id, subject, status, created_at, admin_reply, replied_at
@@ -682,9 +584,6 @@ def support():
     return render_template("support.html", inquiries=inquiries)
 
 
-# ============================================
-# 라우트: 사용자 - 내 문의 상세 보기
-# ============================================
 @app.route("/support/<int:inquiry_id>")
 def support_detail(inquiry_id):
     if not session.get("user_id"):
@@ -695,24 +594,15 @@ def support_detail(inquiry_id):
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     user_id = session["user_id"]
-
     cur.execute(
         """
-        SELECT
-            id,
-            subject,
-            message,
-            status,
-            created_at,
-            admin_reply,
-            replied_at
+        SELECT id, subject, message, status, created_at, admin_reply, replied_at
         FROM inquiries
         WHERE id = %s AND user_id = %s
         """,
         (inquiry_id, user_id),
     )
     inquiry = cur.fetchone()
-
     if inquiry is None:
         abort(404)
 
@@ -720,7 +610,7 @@ def support_detail(inquiry_id):
 
 
 # =======================
-# 라우트: 관리자 - 상품 목록
+# 라우트: 관리자 - 상품/유저/문의
 # =======================
 @app.route("/admin/products")
 def admin_products():
@@ -730,17 +620,9 @@ def admin_products():
 
     products = db_get_products(category=None)
     categories = ["OUTER", "TOP", "BOTTOM", "ACCESSORIES"]
-
-    return render_template(
-        "admin_products.html",
-        products=products,
-        categories=categories,
-    )
+    return render_template("admin_products.html", products=products, categories=categories)
 
 
-# =======================
-# 라우트: 관리자 - 회원 목록 조회
-# =======================
 @app.route("/admin/users")
 def admin_users():
     if not session.get("user_id") or not is_admin():
@@ -749,21 +631,11 @@ def admin_users():
 
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute(
-        """
-        SELECT id, email, name, created_at
-        FROM users
-        ORDER BY created_at DESC
-        """
-    )
+    cur.execute("SELECT id, email, name, created_at FROM users ORDER BY created_at DESC")
     users = cur.fetchall()
-
     return render_template("admin_users.html", users=users)
 
 
-# =======================
-# 라우트: 관리자 - 회원 강제 탈퇴
-# =======================
 @app.route("/admin/users/<int:user_id>/delete", methods=["POST"])
 def admin_user_delete(user_id):
     if not session.get("user_id") or not is_admin():
@@ -775,13 +647,9 @@ def admin_user_delete(user_id):
         flash("관리자 계정이거나 존재하지 않는 계정이라 삭제할 수 없습니다.", "error")
     else:
         flash("해당 회원이 탈퇴 처리되었습니다.", "success")
-
     return redirect(url_for("admin_users"))
 
 
-# =======================
-# 라우트: 관리자 - 고객센터 문의 목록 조회
-# =======================
 @app.route("/admin/inquiries")
 def admin_inquiries():
     if not session.get("user_id") or not is_admin():
@@ -790,32 +658,20 @@ def admin_inquiries():
 
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
     cur.execute(
         """
         SELECT
-            i.id,
-            i.subject,
-            i.message,
-            i.status,
-            i.created_at,
-            i.admin_reply,
-            i.replied_at,
-            u.email AS user_email,
-            u.name AS user_name
+            i.id, i.subject, i.message, i.status, i.created_at, i.admin_reply, i.replied_at,
+            u.email AS user_email, u.name AS user_name
         FROM inquiries i
         JOIN users u ON i.user_id = u.id
         ORDER BY i.created_at DESC
         """
     )
     rows = cur.fetchall()
-
     return render_template("admin_inquiries.html", inquiries=rows)
 
 
-# =======================
-# 라우트: 관리자 - 특정 문의 상세 보기 + 답변/상태 변경
-# =======================
 @app.route("/admin/inquiries/<int:inquiry_id>", methods=["GET", "POST"])
 def admin_inquiry_detail(inquiry_id):
     if not session.get("user_id") or not is_admin():
@@ -828,48 +684,31 @@ def admin_inquiry_detail(inquiry_id):
     if request.method == "POST":
         action = request.form.get("action")
         reply_text = request.form.get("admin_reply", "").strip()
-        now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+        now = now_kst_str()
 
         cur2 = db.cursor()
-
         if reply_text:
             cur2.execute(
                 """
                 UPDATE inquiries
-                SET admin_reply = %s,
-                    replied_at = %s
+                SET admin_reply = %s, replied_at = %s
                 WHERE id = %s
                 """,
                 (reply_text, now, inquiry_id),
             )
 
         if action == "close":
-            cur2.execute(
-                """
-                UPDATE inquiries
-                SET status = 'CLOSED'
-                WHERE id = %s
-                """,
-                (inquiry_id,),
-            )
+            cur2.execute("UPDATE inquiries SET status = 'CLOSED' WHERE id = %s", (inquiry_id,))
 
         db.commit()
         flash("문의 답변이 저장되었습니다.", "success")
         return redirect(url_for("admin_inquiry_detail", inquiry_id=inquiry_id))
 
-    # GET
     cur.execute(
         """
         SELECT
-            i.id,
-            i.subject,
-            i.message,
-            i.status,
-            i.created_at,
-            i.admin_reply,
-            i.replied_at,
-            u.email AS user_email,
-            u.name AS user_name
+            i.id, i.subject, i.message, i.status, i.created_at, i.admin_reply, i.replied_at,
+            u.email AS user_email, u.name AS user_name
         FROM inquiries i
         JOIN users u ON i.user_id = u.id
         WHERE i.id = %s
@@ -877,7 +716,6 @@ def admin_inquiry_detail(inquiry_id):
         (inquiry_id,),
     )
     row = cur.fetchone()
-
     if row is None:
         abort(404)
 
@@ -885,7 +723,7 @@ def admin_inquiry_detail(inquiry_id):
 
 
 # =======================
-# 라우트: 관리자 - 새 상품 추가 (여러 이미지 + 사이즈/재고)
+# 라우트: 관리자 - 상품 추가/수정/삭제
 # =======================
 @app.route("/admin/products/new", methods=["GET", "POST"])
 def admin_product_new():
@@ -900,7 +738,6 @@ def admin_product_new():
         price_raw = request.form.get("price", "").strip()
         description = request.form.get("description", "").strip()
         category = request.form.get("category", "").strip() or "TOP"
-        status = request.form.get("status", "IN_STOCK").strip()
 
         if not name:
             flash("상품명을 입력하세요.", "error")
@@ -912,26 +749,21 @@ def admin_product_new():
             flash("가격은 숫자로 입력하세요.", "error")
             return render_template("admin_product_new.html", categories=categories)
 
-        # 1) 상품 기본정보 먼저 생성 (이미지는 products 테이블에 저장하지 않음)
         new_id = db_create_product(
             name=name,
             price=price,
-            image_url="",  # 이제 의미 거의 없음 (이미지는 product_images로)
-            status=status,
+            image_url="",
             category=category,
             description=description,
             image_data=None,
             image_mime=None,
         )
 
-        # 2) 여러 이미지 저장 (name="images" multiple)
         images = request.files.getlist("images")
-        # getlist는 빈 파일도 섞일 수 있어서 filename 있는 것만 저장
         images = [f for f in images if f and getattr(f, "filename", "")]
         if images:
             db_insert_product_images(new_id, images)
 
-        # 3) 사이즈/재고 저장 (name="size_name[]" / "size_stock[]")
         sizes = request.form.getlist("size_name[]")
         stocks = request.form.getlist("size_stock[]")
         if sizes or stocks:
@@ -943,9 +775,6 @@ def admin_product_new():
     return render_template("admin_product_new.html", categories=categories)
 
 
-# =======================
-# 라우트: 관리자 - 상품 삭제
-# =======================
 @app.route("/admin/products/delete/<int:product_id>", methods=["POST"])
 def admin_product_delete(product_id):
     if not session.get("user_id") or not is_admin():
@@ -957,9 +786,6 @@ def admin_product_delete(product_id):
     return redirect(url_for("admin_products"))
 
 
-# =======================
-# 라우트: 관리자 - 상품 수정 (여러 이미지 + 사이즈/재고)
-# =======================
 @app.route("/admin/products/<int:product_id>/edit", methods=["GET", "POST"])
 def admin_product_edit(product_id):
     if not session.get("user_id") or not is_admin():
@@ -967,14 +793,12 @@ def admin_product_edit(product_id):
         return redirect(url_for("login"))
 
     categories = ["OUTER", "TOP", "BOTTOM", "ACCESSORIES"]
-
-    # 기존 상품 가져오기
     target = db_get_product(product_id)
     if not target:
         flash("해당 상품을 찾을 수 없습니다.", "error")
         return redirect(url_for("admin_products"))
 
-    # (선택) 기존 사이즈/재고 목록
+    images = db_get_product_images(product_id)
     variants = db_get_variants(product_id)
 
     if request.method == "POST":
@@ -982,62 +806,51 @@ def admin_product_edit(product_id):
         price_raw = request.form.get("price", "").strip()
         description = request.form.get("description", "").strip()
         category = request.form.get("category", "").strip() or target["category"]
-        status = request.form.get("status", "").strip() or target["status"]
 
         if not name:
             flash("상품명을 입력하세요.", "error")
-            return render_template(
-                "admin_product_edit.html",
-                product=target,
-                categories=categories,
-                variants=variants,
-            )
+            return render_template("admin_product_edit.html", product=target, categories=categories, variants=variants, images=images)
 
         try:
             price = int(price_raw) if price_raw else 0
         except ValueError:
             flash("가격은 숫자로 입력하세요.", "error")
-            return render_template(
-                "admin_product_edit.html",
-                product=target,
-                categories=categories,
-                variants=variants,
-            )
+            return render_template("admin_product_edit.html", product=target, categories=categories, variants=variants, images=images)
 
-        # 1) 상품 기본정보 업데이트 (이미지 바이너리는 products에 안 넣음)
         db_update_product(
             product_id=product_id,
             name=name,
             price=price,
             image_url=target.get("image_url", "") or "",
-            status=status,
             category=category,
             description=description,
-            image_data=None,   # products 테이블 이미지 컬럼은 더 이상 사용 안 함
-            image_mime=None,
         )
 
-        # 2) 새로 올린 이미지들 추가 저장 (name="images" multiple)
-        images = request.files.getlist("images")
-        images = [f for f in images if f and getattr(f, "filename", "")]
-        if images:
-            db_insert_product_images(product_id, images)
+        new_images = request.files.getlist("images")
+        new_images = [f for f in new_images if f and getattr(f, "filename", "")]
+        if new_images:
+            db_insert_product_images(product_id, new_images)
 
-        # 3) 사이즈/재고 덮어쓰기 (name="size_name[]", "size_stock[]")
         sizes = request.form.getlist("size_name[]")
         stocks = request.form.getlist("size_stock[]")
         db_replace_variants(product_id, sizes, stocks)
 
         flash("상품 정보가 수정되었습니다.", "success")
-        return redirect(url_for("admin_products"))
+        return redirect(url_for("admin_product_edit", product_id=product_id))
 
-    # GET: 수정 폼 표시
-    return render_template(
-        "admin_product_edit.html",
-        product=target,
-        categories=categories,
-        variants=variants,
-    )
+    return render_template("admin_product_edit.html", product=target, categories=categories, variants=variants, images=images)
+
+
+# ✅ 이미지 개별 삭제 라우트 (이번에 추가)
+@app.route("/admin/products/<int:product_id>/images/<int:image_id>/delete", methods=["POST"])
+def admin_product_image_delete(product_id, image_id):
+    if not session.get("user_id") or not is_admin():
+        flash("관리자 권한이 필요합니다.", "error")
+        return redirect(url_for("login"))
+
+    db_delete_product_image(image_id=image_id, product_id=product_id)
+    flash("이미지가 삭제되었습니다.", "success")
+    return redirect(url_for("admin_product_edit", product_id=product_id))
 
 
 # =======================
@@ -1050,30 +863,24 @@ def admin_products_reorder():
 
     data = request.get_json() or {}
     order = data.get("order", [])
-
     if not isinstance(order, list):
         return jsonify({"ok": False, "error": "invalid payload"}), 400
 
     db = get_db()
     cur = db.cursor()
-
-    # order = [5, 2, 7, ...] 이런 식의 상품 id 리스트
     for idx, pid in enumerate(order, start=1):
         try:
             pid_int = int(pid)
         except ValueError:
             continue
-        cur.execute(
-            "UPDATE products SET sort_order = %s WHERE id = %s",
-            (idx, pid_int),
-        )
+        cur.execute("UPDATE products SET sort_order = %s WHERE id = %s", (idx, pid_int))
 
     db.commit()
     return jsonify({"ok": True})
 
 
 # =======================
-# 라우트: 상품 상세 페이지
+# 라우트: 상품 상세 + 이미지 응답
 # =======================
 @app.route("/product/<int:product_id>")
 def product_detail(product_id):
@@ -1083,13 +890,7 @@ def product_detail(product_id):
 
     images = db_get_product_images(product_id)
     variants = db_get_variants(product_id)
-
-    return render_template(
-        "product_detail.html",
-        product=product,
-        images=images,
-        variants=variants,
-    )
+    return render_template("product_detail.html", product=product, images=images, variants=variants)
 
 
 @app.route("/product_image/<int:product_id>")
@@ -1097,36 +898,40 @@ def product_image(product_id):
     db = get_db()
     cur = db.cursor()
     cur.execute(
-        "SELECT image_data, image_mime, image_url FROM products WHERE id = %s",
+        """
+        SELECT image_data, image_mime, image_url
+        FROM product_images
+        WHERE product_id = %s
+        ORDER BY sort_order ASC, id ASC
+        LIMIT 1
+        """,
         (product_id,),
     )
     row = cur.fetchone()
     if not row:
-        abort(404)
+        # 이미지 없으면 placeholder로 (원하면 경로 바꿔도 됨)
+        return redirect("https://via.placeholder.com/600x800?text=NO+IMAGE")
 
-    image_data, image_mime, image_url = row
-
-    if image_data:
-        # DB에 저장된 바이너리 이미지 사용
-        return Response(image_data, mimetype=image_mime or "image/jpeg")
-
-    # 바이너리가 없고 image_url만 있을 때는 그쪽으로 redirect
-    if image_url:
-        return redirect(image_url)
-
-    # 둘 다 없으면 404
-    abort(404)
+    data, mime, url = row
+    if data:
+        return Response(data, mimetype=mime or "image/jpeg")
+    if url:
+        return redirect(url)
+    return redirect("https://via.placeholder.com/600x800?text=NO+IMAGE")
 
 
 @app.route("/product_image_by_id/<int:image_id>")
 def product_image_by_id(image_id):
     db = get_db()
     cur = db.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         SELECT image_data, image_mime, image_url
         FROM product_images
         WHERE id=%s
-    """, (image_id,))
+        """,
+        (image_id,),
+    )
     row = cur.fetchone()
     if not row:
         abort(404)
