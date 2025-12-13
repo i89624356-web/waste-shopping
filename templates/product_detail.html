@@ -5,7 +5,11 @@
 <section class="pd-wrap">
     <!-- LEFT: image -->
     <div class="pd-left">
-        <img class="pd-image" src="{{ url_for('product_image', product_id=product.id) }}" alt="{{ product.name }}">
+        <img id="mainProductImage" class="pd-image" src="{% if images and images|length > 0 %}
+                    {{ url_for('product_image_by_id', image_id=images[0].id) }}
+                 {% else %}
+                    {{ url_for('product_image', product_id=product.id) }}
+                 {% endif %}" alt="{{ product.name }}">
     </div>
 
     <!-- RIGHT: info -->
@@ -13,53 +17,45 @@
         <h1 class="pd-name">{{ product.name }}</h1>
 
         <div class="pd-price">
-            {% if product.status == "OUT_OF_STOCK" %}
-            <span class="pd-soldout">OUT OF STOCK</span>
-            {% else %}
             KRW {{ "{:,}".format(product.price) }}
-            {% endif %}
         </div>
 
-        <!-- 컬러 썸네일 (지금은 샘플 3개) -->
+        <!-- COLOR (업로드한 이미지 개수만큼) -->
+        {% if images and images|length > 0 %}
         <div class="pd-section">
             <div class="pd-label">COLOR</div>
-            <div class="pd-colors">
-                <button type="button" class="pd-color active" aria-label="color 1">
-                    <img src="{{ url_for('product_image', product_id=product.id) }}" alt="">
+            <div class="pd-colors" id="colorSwatches">
+                {% for img in images %}
+                <button type="button" class="pd-color {% if loop.first %}active{% endif %}"
+                    onclick="selectImage({{ img.id }}, this)" aria-label="color {{ loop.index }}">
+                    <img src="{{ url_for('product_image_by_id', image_id=img.id) }}" alt="thumb {{ loop.index }}">
                 </button>
-                <button type="button" class="pd-color" aria-label="color 2">
-                    <img src="{{ url_for('product_image', product_id=product.id) }}" alt="">
-                </button>
-                <button type="button" class="pd-color" aria-label="color 3">
-                    <img src="{{ url_for('product_image', product_id=product.id) }}" alt="">
-                </button>
+                {% endfor %}
             </div>
         </div>
+        {% endif %}
 
-        <!-- 사이즈 -->
+        <!-- SIZE (variants 기반) -->
         <div class="pd-section">
             <div class="pd-label">SIZE</div>
 
-            <div class="pd-sizes {% if product.status == 'OUT_OF_STOCK' %}is-soldout{% endif %}">
-                {% set sizes = ["S", "M", "L", "XL"] %}
-                {% for s in sizes %}
-                {% if product.status == "OUT_OF_STOCK" %}
-                <button type="button" class="pd-size is-disabled" disabled>{{ s }}</button>
-                {% else %}
-                <button type="button" class="pd-size">{{ s }}</button>
-                {% endif %}
-                {% endfor %}
+            <div class="pd-sizes">
+                {% for v in variants %}
+                {% if v.stock <= 0 %} <button type="button" class="pd-size is-disabled" disabled>
+                    {{ v.size }}
+                    </button>
+                    {% else %}
+                    <button type="button" class="pd-size">
+                        {{ v.size }}
+                    </button>
+                    {% endif %}
+                    {% endfor %}
             </div>
-
         </div>
 
         <!-- 버튼 -->
         <div class="pd-actions">
-            {% if product.status == "OUT_OF_STOCK" %}
-            <button class="pd-btn" disabled>품절</button>
-            {% else %}
             <button class="pd-btn">구매하기</button>
-            {% endif %}
         </div>
 
         {% if product.description %}
@@ -69,4 +65,17 @@
         {% endif %}
     </div>
 </section>
+
+<script>
+    function selectImage(imageId, btn) {
+        const mainImg = document.getElementById("mainProductImage");
+        mainImg.src = `/product_image_by_id/${imageId}`;
+
+        document
+            .querySelectorAll("#colorSwatches .pd-color")
+            .forEach(el => el.classList.remove("active"));
+
+        btn.classList.add("active");
+    }
+</script>
 {% endblock %}
