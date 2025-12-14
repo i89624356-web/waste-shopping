@@ -1197,11 +1197,22 @@ def product_detail(product_id):
     color_map = []
     for c in colors:
         variants = db_get_color_variants(c["id"])
-        color_map.append(
-            {"id": c["id"], "name": c["color_name"], "image_id": c["image_id"], "variants": variants}
-        )
+        color_map.append({
+            "id": c["id"],
+            "name": c["color_name"],
+            "image_id": c["image_id"],
+            "variants": variants
+        })
 
-    return render_template("product_detail.html", product=product, colors=color_map)
+    # ✅ 추가: 상품의 전체 이미지 목록
+    images = db_get_product_images(product_id)
+
+    return render_template(
+        "product_detail.html",
+        product=product,
+        colors=color_map,
+        images=images,  # ✅ 추가
+    )
 
 
 # =======================

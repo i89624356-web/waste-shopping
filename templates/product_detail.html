@@ -3,7 +3,7 @@
 
 {% block content %}
 <section class="pd-wrap">
-    <!-- LEFT: main image -->
+    <!-- LEFT: main image + thumbs -->
     <div class="pd-left">
         {# 기본은 첫 컬러 이미지, 없으면 첫 상품 이미지 #}
         {% set first_color = colors[0] if colors and colors|length > 0 else None %}
@@ -14,6 +14,19 @@
         {% endif %}
 
         <img id="pdMainImage" class="pd-image" src="{{ main_src }}" alt="{{ product.name }}">
+
+        {# ✅ 상품 전체 이미지 썸네일 (app.py에서 images 내려줘야 함) #}
+        {% if images and images|length > 0 %}
+        <div class="pd-thumbs" id="pdThumbs" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
+            {% for im in images %}
+            <button type="button" class="pd-thumb" data-image-id="{{ im.id }}"
+                style="border:1px solid #eee; padding:0; border-radius:8px; overflow:hidden; width:70px; height:70px; background:#fff;">
+                <img src="{{ url_for('product_image_by_id', image_id=im.id) }}" alt="thumb {{ im.id }}"
+                    style="width:100%; height:100%; object-fit:cover; display:block;">
+            </button>
+            {% endfor %}
+        </div>
+        {% endif %}
     </div>
 
     <!-- RIGHT: info -->
@@ -70,13 +83,15 @@
 </section>
 
 <script>
-    const COLORS = {{ colors| tojson }};
+    const COLORS = {{ colors | tojson }};
+    const IMAGES = {{ (images or[]) | tojson }};
 
     const elMainImg = document.getElementById("pdMainImage");
     const elColors = document.getElementById("pdColors");
     const elSizes = document.getElementById("pdSizes");
     const elNote = document.getElementById("pdStockNote");
     const elBuyBtn = document.getElementById("pdBuyBtn");
+    const elThumbs = document.getElementById("pdThumbs");
 
     let selectedColorId = (COLORS.length > 0) ? String(COLORS[0].id) : null;
     let selectedSize = null;
@@ -120,6 +135,11 @@
         });
     }
 
+    function setMainImageById(imageId) {
+        const base = "{{ url_for('product_image_by_id', image_id=999999) }}";
+        elMainImg.src = base.replace("999999", String(imageId));
+    }
+
     function setActiveColorButton(colorId) {
         if (!elColors) return;
         elColors.querySelectorAll(".pd-color").forEach(btn => {
@@ -141,11 +161,8 @@
 
         const stockMap = stockMapForColor(color);
 
-        // 메인 이미지
-        if (color.image_id) {
-            const base = "{{ url_for('product_image_by_id', image_id=999999) }}";
-            elMainImg.src = base.replace("999999", String(color.image_id));
-        }
+        // 메인 이미지: 컬러 대표 이미지가 있으면 그걸로
+        if (color.image_id) setMainImageById(color.image_id);
 
         // 사이즈 버튼 상태 반영: variants에 존재 + stock>0이면 활성
         elSizes.querySelectorAll(".pd-size").forEach(btn => {
@@ -190,7 +207,15 @@
         elBuyBtn.textContent = "구매하기";
     }
 
+    function onThumbClick(e) {
+        const btn = e.target.closest(".pd-thumb");
+        if (!btn) return;
+        const imageId = btn.dataset.imageId;
+        if (imageId) setMainImageById(imageId);
+    }
+
     if (elColors) elColors.addEventListener("click", onColorClick);
+    if (elThumbs) elThumbs.addEventListener("click", onThumbClick);
     elSizes.addEventListener("click", onSizeClick);
 
     // 초기 렌더
