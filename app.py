@@ -470,15 +470,21 @@ def db_get_colors(product_id):
 def db_get_color_variants(color_id):
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute(
-        """
+    cur.execute("""
         SELECT size, stock
         FROM product_color_variants
         WHERE color_id=%s
-        ORDER BY size ASC
-        """,
-        (color_id,),
-    )
+        ORDER BY
+          CASE size
+            WHEN 'XS' THEN 1
+            WHEN 'S'  THEN 2
+            WHEN 'M'  THEN 3
+            WHEN 'L'  THEN 4
+            WHEN 'XL' THEN 5
+            WHEN 'XXL' THEN 6
+            ELSE 99
+          END
+    """, (color_id,))
     return cur.fetchall()
 
 
