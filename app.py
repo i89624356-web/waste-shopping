@@ -145,19 +145,6 @@ def init_db():
         """
     )
 
-    # ---------- product_variants ----------
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS product_variants (
-            id SERIAL PRIMARY KEY,
-            product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-            size TEXT NOT NULL,
-            stock INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL
-        )
-        """
-    )
-
     # ---------- color ----------
     cur.execute(
         """
@@ -410,46 +397,6 @@ def db_insert_product_images(product_id: int, files):
 
     db.commit()
     return inserted_ids
-
-
-def db_get_variants(product_id: int):
-    db = get_db()
-    cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute(
-        """
-        SELECT id, size, stock
-        FROM product_variants
-        WHERE product_id=%s
-        ORDER BY id ASC
-        """,
-        (product_id,),
-    )
-    return cur.fetchall()
-
-
-def db_replace_variants(product_id: int, sizes: list[str], stocks: list[str]):
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("DELETE FROM product_variants WHERE product_id=%s", (product_id,))
-
-    ts = now_kst_iso()
-    for s, st in zip(sizes, stocks):
-        s = (s or "").strip()
-        if not s:
-            continue
-        try:
-            stock_i = int(st)
-        except Exception:
-            stock_i = 0
-        cur.execute(
-            """
-            INSERT INTO product_variants (product_id, size, stock, created_at)
-            VALUES (%s, %s, %s, %s)
-            """,
-            (product_id, s.upper(), stock_i, ts),
-        )
-
-    db.commit()
 
 
 def db_get_colors(product_id):
