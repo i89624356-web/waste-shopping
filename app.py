@@ -1013,105 +1013,128 @@ def admin_product_edit(product_id):
 
     categories = ["OUTER", "TOP", "BOTTOM", "ACCESSORIES"]
 
-    target = db_get_product(product_id)
-    if not target:
+    product = db_get_product(product_id)
+    if not product:
         flash("해당 상품을 찾을 수 없습니다.", "error")
         return redirect(url_for("admin_products"))
 
     images = db_get_product_images(product_id)
     colors = db_get_colors(product_id)
 
+    # GET용 color + variants
     color_map = []
     for c in colors:
-        v = db_get_color_variants(c["id"])
-        color_map.append(
-            {
-                "id": c["id"],
-                "name": c["color_name"],
-                "image_id": c["image_id"],
-                "variants": v,
-            }
-        )
+        variants = db_get_color_variants(c["id"])
+        color_map.append({
+            "name": c["color_name"],
+            "image_id": c["image_id"],
+            "variants": variants,
+        })
 
     if request.method == "POST":
         name = request.form.get("name", "").strip()
         price_raw = request.form.get("price", "").strip()
         description = request.form.get("description", "").strip()
-        category = request.form.get("category", "").strip() or target["category"]
+        category = request.form.get("category", "").strip()
 
         if not name:
             flash("상품명을 입력하세요.", "error")
             return render_template(
                 "admin_product_edit.html",
-                product=target,
+                product=product,
                 categories=categories,
                 images=images,
                 colors=color_map,
             )
 
         try:
-            price = int(price_raw) if price_raw else 0
-        except ValueError:
-            flash("가격은 숫자로 입력하세요.", "error")
+            price = int(price_raw)
+        except Exception:
+            flash("가격은 숫자여야 합니다.", "error")
             return render_template(
                 "admin_product_edit.html",
-                product=target,
+                product=product,
                 categories=categories,
                 images=images,
                 colors=color_map,
             )
 
         db = get_db()
+        cur = db.cursor()
+
         try:
-            # 1) 기본 정보 업데이트
-            db_update_product(
-                product_id=product_id,
-                name=name,
-                price=price,
-                image_url=target.get("image_url", "") or "",
-                category=category,
-                description=description,
-                image_data=None,
-                image_mime=None,
+            # 1️⃣ 상품 기본 정보 업데이트
+            cur.execute(
+                """
+                UPDATE products
+                SET name=%s, price=%s, category=%s, description=%s
+                WHERE id=%s
+                """,
+                (name, price, category, description, product_id),
             )
 
-            # 2) 새 이미지 업로드 추가
+            # 2️⃣ 새 이미지 추가
             new_images = request.files.getlist("images")
-            new_images = [f for f in new_images if f and getattr(f, "filename", "")]
+            new_images = [f for f in new_images if f and f.filename]
             if new_images:
                 db_insert_product_images(product_id, new_images)
 
-            # 3) 컬러/재고는 통째로 교체
-            db_delete_colors_for_product(product_id)
+            # 3️⃣ 컬러 + 재고 전부 초기화
+            cur.execute("DELETE FROM product_colors WHERE product_id=%s", (product_id,))
 
             color_names = request.form.getlist("color_name[]")
-            color_image_ids = request.form.getlist("color_image_id[]")  # edit 템플릿 기준
+            color_image_ids = request.form.getlist("color_image_id[]")
 
-            for idx, cname in enumerate(color_names):
-                cname = (cname or "").strip()
-                if not cname:
+            for i, color_name in enumerate(color_names):
+                color_name = color_name.strip()
+                if not color_name:
                     continue
 
-                raw = color_image_ids[idx] if idx < len(color_image_ids) else ""
-                image_id = int(raw) if raw and raw.isdigit() else None
+                raw_img = color_image_ids[i] if i < len(color_image_ids) else ""
+                image_id = int(raw_img) if raw_img.isdigit() else None
 
-                color_id = db_upsert_color(product_id, cname, image_id)
+                # color insert
+                cur.execute(
+                    """
+                    INSERT INTO product_colors (product_id, color_name, image_id, created_at)
+                    VALUES (%s,%s,%s,%s)
+                    RETURNING id
+                    """,
+                    (product_id, color_name, image_id, now_kst_str()),
+                )
+                color_id = cur.fetchone()[0]
 
-                sizes = request.form.getlist(f"size_{idx}[]")
-                stocks = request.form.getlist(f"stock_{idx}[]")
-                db_replace_color_variants(color_id, sizes, stocks)
+                sizes = request.form.getlist(f"size_{i}[]")
+                stocks = request.form.getlist(f"stock_{i}[]")
+
+                for s, st in zip(sizes, stocks):
+                    s = (s or "").strip().upper()
+                    if not s:
+                        continue
+                    try:
+                        stock_i = int(st)
+                    except Exception:
+                        stock_i = 0
+
+                    cur.execute(
+                        """
+                        INSERT INTO product_color_variants (color_id, size, stock)
+                        VALUES (%s,%s,%s)
+                        """,
+                        (color_id, s, stock_i),
+                    )
 
             db.commit()
             flash("상품 정보가 수정되었습니다.", "success")
             return redirect(url_for("admin_products"))
 
-        except Exception:
+        except Exception as e:
             db.rollback()
-            raise
+            raise e
 
     return render_template(
         "admin_product_edit.html",
-        product=target,
+        product=product,
         categories=categories,
         images=images,
         colors=color_map,

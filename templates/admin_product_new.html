@@ -74,6 +74,7 @@
       <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
         <input class="admin-input" name="color_name[]" placeholder="COLOR (예: BLACK)" value="${prefill.name}">
         <input class="admin-input" name="color_image_idx[]" placeholder="대표 이미지 번호(1~N)" value="${prefill.image_idx}" style="max-width:180px;">
+        <input type="hidden" name="color_key[]" value="${idx}">
         <button type="button" class="admin-delete-button" onclick="this.closest('div').parentElement.remove()">삭제</button>
       </div>
 
