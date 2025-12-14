@@ -523,6 +523,17 @@ def db_replace_color_variants(color_id: int, sizes: list[str], stocks: list[str]
     db.commit()
 
 
+def db_delete_product_image(image_id: int, product_id: int):
+    db = get_db()
+    cur = db.cursor()
+    # 해당 상품의 이미지인지 확인하고 삭제
+    cur.execute(
+        "DELETE FROM product_images WHERE id=%s AND product_id=%s",
+        (image_id, product_id),
+    )
+    db.commit()
+
+
 # =======================
 # 템플릿 공통 컨텍스트
 # =======================
@@ -1105,6 +1116,17 @@ def admin_product_edit(product_id):
         images=images,
         colors=color_map,
     )
+
+
+@app.route("/admin/products/<int:product_id>/images/<int:image_id>/delete", methods=["POST"])
+def admin_product_image_delete(product_id, image_id):
+    if not session.get("user_id") or not is_admin():
+        flash("관리자 권한이 필요합니다.", "error")
+        return redirect(url_for("login"))
+
+    db_delete_product_image(image_id, product_id)
+    flash("이미지가 삭제되었습니다.", "success")
+    return redirect(url_for("admin_product_edit", product_id=product_id))
 
 
 @app.route("/admin/products/reorder", methods=["POST"])

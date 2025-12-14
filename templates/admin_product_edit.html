@@ -16,20 +16,44 @@
             <input type="number" name="price" min="0" step="1000" class="admin-input" value="{{ product.price }}">
         </label>
 
+        {# ✅ 현재 등록된 이미지 목록 + 삭제 #}
+        {% if images and images|length > 0 %}
+        <div class="admin-label">현재 등록된 이미지</div>
+        <div class="admin-hint" style="margin-top:-6px;">
+            컬러 대표 이미지에는 아래의 <b>이미지 ID</b>를 입력합니다.
+        </div>
+
+        <div style="display:flex; gap:12px; flex-wrap:wrap; margin:10px 0 14px 0;">
+            {% for im in images %}
+            <div style="border:1px solid #eee; border-radius:10px; padding:10px; width:160px;">
+                <div style="border-radius:8px; overflow:hidden; background:#fafafa;">
+                    <img src="{{ url_for('product_image_by_id', image_id=im.id) }}" alt="image {{ im.id }}"
+                        style="width:100%; display:block;">
+                </div>
+
+                <div style="font-size:12px; color:#666; margin-top:8px;">
+                    이미지 ID: <b>{{ im.id }}</b>
+                </div>
+
+                <form method="post"
+                    action="{{ url_for('admin_product_image_delete', product_id=product.id, image_id=im.id) }}"
+                    onsubmit="return confirm('이 이미지를 삭제할까요? (해당 ID를 쓰는 컬러 대표이미지는 자동으로 비워집니다)');"
+                    style="margin-top:8px;">
+                    <button type="submit" class="admin-delete-button" style="width:100%;">이미지 삭제</button>
+                </form>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="admin-hint">현재 등록된 이미지가 없습니다. 아래에서 새 이미지를 업로드하세요.</div>
+        {% endif %}
+
         <label class="admin-label">
             새 이미지 추가 업로드 (여러 장 가능)
             <input type="file" name="images" multiple accept="image/*" class="admin-input">
-            <div class="admin-hint">컬러 대표 이미지에는 “이미지 ID(숫자)”를 입력합니다.</div>
-
-            {# (선택) 실수 방지용: 현재 이미지 ID 보여주기 #}
-            {% if images %}
             <div class="admin-hint">
-                현재 이미지 ID:
-                {% for img in images %}
-                <span style="display:inline-block; margin-right:8px;">{{ img.id }}</span>
-                {% endfor %}
+                업로드 후 저장하면, 위 “현재 등록된 이미지”에 새 이미지가 추가되고 ID가 생성됩니다.
             </div>
-            {% endif %}
         </label>
 
         <label class="admin-label">
@@ -64,7 +88,10 @@
 
 <script>
     const DEFAULT_SIZES = ["S", "M", "L", "XL"];
+
+    // 서버에서 내려준 colors (id,name,image_id,variants[{size,stock}...])
     const EXISTING_COLORS = {{ colors| tojson }};
+
     let colorIndex = 0;
 
     function addColorBlock(prefill = { name: "", image_id: "", variants: [] }) {
@@ -72,7 +99,6 @@
         const idx = colorIndex++;
 
         const wrap = document.createElement("div");
-        wrap.className = "colorBlock";
         wrap.style.border = "1px solid #eee";
         wrap.style.padding = "10px";
         wrap.style.borderRadius = "6px";
@@ -82,7 +108,7 @@
       <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
         <input class="admin-input" name="color_name[]" placeholder="COLOR (예: BLACK)" value="${prefill.name || ""}">
         <input class="admin-input" name="color_image_id[]" placeholder="대표 이미지 ID (숫자)" value="${prefill.image_id || ""}" style="max-width:180px;">
-        <button type="button" class="admin-delete-button" onclick="this.closest('.colorBlock').remove()">삭제</button>
+        <button type="button" class="admin-delete-button" onclick="this.closest('div').parentElement.remove()">삭제</button>
       </div>
 
       <div style="font-size:0.8rem; color:#666; margin-bottom:6px;">사이즈 / 재고</div>
@@ -97,6 +123,7 @@
 
         const rows = wrap.querySelector(".variantRows");
 
+        // variants가 있으면 그대로 뿌리고, 없으면 기본 사이즈 뿌림
         if (prefill.variants && prefill.variants.length > 0) {
             prefill.variants.forEach(v => {
                 rows.appendChild(makeVariantRow(idx, (v.size || ""), (v.stock || 0)));
@@ -120,11 +147,12 @@
     }
 
     function addVariantRow(btn, idx) {
-        const wrap = btn.closest(".colorBlock");
+        const wrap = btn.closest("div");
         const rows = wrap.querySelector(".variantRows");
         rows.appendChild(makeVariantRow(idx, "", 0));
     }
 
+    // 기존 컬러들 먼저 렌더
     if (EXISTING_COLORS && EXISTING_COLORS.length > 0) {
         EXISTING_COLORS.forEach(c => {
             addColorBlock({
