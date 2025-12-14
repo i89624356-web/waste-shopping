@@ -422,18 +422,18 @@ def db_get_color_variants(color_id):
         FROM product_color_variants
         WHERE color_id=%s
         ORDER BY
-          CASE size
-            WHEN 'XS' THEN 1
-            WHEN 'S'  THEN 2
-            WHEN 'M'  THEN 3
-            WHEN 'L'  THEN 4
-            WHEN 'XL' THEN 5
-            WHEN 'XXL' THEN 6
+          CASE UPPER(size)
+            WHEN 'XS' THEN 0
+            WHEN 'S'  THEN 1
+            WHEN 'M'  THEN 2
+            WHEN 'L'  THEN 3
+            WHEN 'XL' THEN 4
+            WHEN 'XXL' THEN 5
             ELSE 99
-          END
+          END,
+          size ASC
     """, (color_id,))
     return cur.fetchall()
-
 
 def db_get_color(color_id: int):
     db = get_db()
