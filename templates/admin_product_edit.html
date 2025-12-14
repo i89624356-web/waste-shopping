@@ -34,10 +34,9 @@
                     이미지 ID: <b>{{ im.id }}</b>
                 </div>
 
-                <!-- ✅ 중첩 form 금지: 삭제는 체크로 -->
-                <label style="display:block; margin-top:8px; font-size:12px;">
+                <label style="display:flex; gap:6px; align-items:center; margin-top:8px; font-size:13px;">
                     <input type="checkbox" name="delete_image_ids[]" value="{{ im.id }}">
-                    이 이미지 삭제(저장 시 반영)
+                    이 이미지 삭제
                 </label>
             </div>
             {% endfor %}
