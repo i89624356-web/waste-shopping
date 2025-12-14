@@ -41,7 +41,15 @@
                     {{ p.name }}
                 </td>
                 <td>{{ p.category }}</td>
-                <td>{{ p.status }}</td>
+
+                {# ✅ status 컬럼 대신 total_stock으로 상태 표시 #}
+                <td>
+                    {% if (p.total_stock | int) <= 0 %} <span class="status out">OUT OF STOCK</span>
+                        {% else %}
+                        <span class="status in">IN STOCK</span>
+                        {% endif %}
+                </td>
+
                 <td>KRW {{ "{:,}".format(p.price) }}</td>
                 <td>
                     <div class="admin-actions">
