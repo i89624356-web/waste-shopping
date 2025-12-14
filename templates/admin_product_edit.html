@@ -16,7 +16,6 @@
             <input type="number" name="price" min="0" step="1000" class="admin-input" value="{{ product.price }}">
         </label>
 
-        {# ✅ 현재 등록된 이미지 목록 + 삭제 #}
         {% if images and images|length > 0 %}
         <div class="admin-label">현재 등록된 이미지</div>
         <div class="admin-hint" style="margin-top:-6px;">
@@ -35,12 +34,11 @@
                     이미지 ID: <b>{{ im.id }}</b>
                 </div>
 
-                <form method="post"
-                    action="{{ url_for('admin_product_image_delete', product_id=product.id, image_id=im.id) }}"
-                    onsubmit="return confirm('이 이미지를 삭제할까요? (해당 ID를 쓰는 컬러 대표이미지는 자동으로 비워집니다)');"
-                    style="margin-top:8px;">
-                    <button type="submit" class="admin-delete-button" style="width:100%;">이미지 삭제</button>
-                </form>
+                <!-- ✅ 중첩 form 금지: 삭제는 체크로 -->
+                <label style="display:block; margin-top:8px; font-size:12px;">
+                    <input type="checkbox" name="delete_image_ids[]" value="{{ im.id }}">
+                    이 이미지 삭제(저장 시 반영)
+                </label>
             </div>
             {% endfor %}
         </div>
@@ -75,9 +73,7 @@
         <div class="admin-label" style="margin-top:6px;">컬러 / 사이즈별 재고</div>
         <div id="colorBlocks"></div>
 
-        <button type="button" class="admin-secondary-button" onclick="addColorBlock()">
-            + 컬러 추가
-        </button>
+        <button type="button" class="admin-secondary-button" onclick="addColorBlock()">+ 컬러 추가</button>
 
         <div class="admin-form-actions">
             <a href="{{ url_for('admin_products') }}" class="admin-secondary-button">취소</a>
@@ -88,10 +84,7 @@
 
 <script>
     const DEFAULT_SIZES = ["S", "M", "L", "XL"];
-
-    // 서버에서 내려준 colors (id,name,image_id,variants[{size,stock}...])
     const EXISTING_COLORS = {{ colors| tojson }};
-
     let colorIndex = 0;
 
     function addColorBlock(prefill = { name: "", image_id: "", variants: [] }) {
@@ -108,7 +101,6 @@
       <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
         <input class="admin-input" name="color_name[]" placeholder="COLOR (예: BLACK)" value="${prefill.name || ""}">
         <input class="admin-input" name="color_image_id[]" placeholder="대표 이미지 ID (숫자)" value="${prefill.image_id || ""}" style="max-width:180px;">
-        <input type="hidden" name="color_key[]" value="${idx}">
         <button type="button" class="admin-delete-button" onclick="this.closest('div').parentElement.remove()">삭제</button>
       </div>
 
@@ -121,14 +113,10 @@
     `;
 
         box.appendChild(wrap);
-
         const rows = wrap.querySelector(".variantRows");
 
-        // variants가 있으면 그대로 뿌리고, 없으면 기본 사이즈 뿌림
         if (prefill.variants && prefill.variants.length > 0) {
-            prefill.variants.forEach(v => {
-                rows.appendChild(makeVariantRow(idx, (v.size || ""), (v.stock || 0)));
-            });
+            prefill.variants.forEach(v => rows.appendChild(makeVariantRow(idx, v.size || "", v.stock || 0)));
         } else {
             DEFAULT_SIZES.forEach(s => rows.appendChild(makeVariantRow(idx, s, 0)));
         }
@@ -153,15 +141,8 @@
         rows.appendChild(makeVariantRow(idx, "", 0));
     }
 
-    // 기존 컬러들 먼저 렌더
     if (EXISTING_COLORS && EXISTING_COLORS.length > 0) {
-        EXISTING_COLORS.forEach(c => {
-            addColorBlock({
-                name: c.name,
-                image_id: c.image_id,
-                variants: c.variants || [],
-            });
-        });
+        EXISTING_COLORS.forEach(c => addColorBlock({ name: c.name, image_id: c.image_id, variants: c.variants || [] }));
     } else {
         addColorBlock();
     }

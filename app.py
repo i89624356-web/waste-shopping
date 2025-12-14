@@ -1021,107 +1021,114 @@ def admin_product_edit(product_id):
     images = db_get_product_images(product_id)
     colors = db_get_colors(product_id)
 
-    # GET용 color + variants
     color_map = []
     for c in colors:
-        variants = db_get_color_variants(c["id"])
         color_map.append({
+            "id": c["id"],
             "name": c["color_name"],
             "image_id": c["image_id"],
-            "variants": variants,
+            "variants": db_get_color_variants(c["id"]),
         })
 
     if request.method == "POST":
-        name = request.form.get("name", "").strip()
-        price_raw = request.form.get("price", "").strip()
-        description = request.form.get("description", "").strip()
-        category = request.form.get("category", "").strip()
-
-        if not name:
-            flash("상품명을 입력하세요.", "error")
-            return render_template(
-                "admin_product_edit.html",
-                product=product,
-                categories=categories,
-                images=images,
-                colors=color_map,
-            )
-
-        try:
-            price = int(price_raw)
-        except Exception:
-            flash("가격은 숫자여야 합니다.", "error")
-            return render_template(
-                "admin_product_edit.html",
-                product=product,
-                categories=categories,
-                images=images,
-                colors=color_map,
-            )
-
         db = get_db()
         cur = db.cursor()
 
         try:
-            # 1️⃣ 상품 기본 정보 업데이트
-            cur.execute(
-                """
-                UPDATE products
-                SET name=%s, price=%s, category=%s, description=%s
-                WHERE id=%s
-                """,
-                (name, price, category, description, product_id),
+            # ===============================
+            # 1. 기본 상품 정보 업데이트
+            # ===============================
+            name = request.form.get("name", "").strip()
+            price = int(request.form.get("price") or 0)
+            description = request.form.get("description", "").strip()
+            category = request.form.get("category")
+
+            if not name:
+                flash("상품명을 입력하세요.", "error")
+                raise Exception("invalid name")
+
+            db_update_product(
+                product_id=product_id,
+                name=name,
+                price=price,
+                image_url=product.get("image_url") or "",
+                category=category,
+                description=description,
+                image_data=None,
+                image_mime=None,
             )
 
-            # 2️⃣ 새 이미지 추가
+            # ===============================
+            # 2. 이미지 삭제 처리 ⭐ 핵심
+            # ===============================
+            delete_ids = request.form.getlist("delete_image_ids[]")
+            for iid in delete_ids:
+                if not iid.isdigit():
+                    continue
+
+                iid = int(iid)
+
+                # 컬러에서 참조 중이면 NULL 처리
+                cur.execute(
+                    "UPDATE product_colors SET image_id=NULL WHERE image_id=%s",
+                    (iid,),
+                )
+
+                # 실제 이미지 삭제
+                cur.execute(
+                    "DELETE FROM product_images WHERE id=%s AND product_id=%s",
+                    (iid, product_id),
+                )
+
+            # ===============================
+            # 3. 새 이미지 추가
+            # ===============================
             new_images = request.files.getlist("images")
             new_images = [f for f in new_images if f and f.filename]
             if new_images:
                 db_insert_product_images(product_id, new_images)
 
-            # 3️⃣ 컬러 + 재고 전부 초기화
+            # ===============================
+            # 4. 컬러 / 사이즈 재구성 (전부 교체)
+            # ===============================
             cur.execute("DELETE FROM product_colors WHERE product_id=%s", (product_id,))
 
             color_names = request.form.getlist("color_name[]")
             color_image_ids = request.form.getlist("color_image_id[]")
 
-            for i, color_name in enumerate(color_names):
-                color_name = color_name.strip()
-                if not color_name:
+            for idx, cname in enumerate(color_names):
+                cname = cname.strip()
+                if not cname:
                     continue
 
-                raw_img = color_image_ids[i] if i < len(color_image_ids) else ""
-                image_id = int(raw_img) if raw_img.isdigit() else None
+                raw = color_image_ids[idx] if idx < len(color_image_ids) else ""
+                image_id = int(raw) if raw.isdigit() else None
 
-                # color insert
                 cur.execute(
                     """
                     INSERT INTO product_colors (product_id, color_name, image_id, created_at)
                     VALUES (%s,%s,%s,%s)
                     RETURNING id
                     """,
-                    (product_id, color_name, image_id, now_kst_str()),
+                    (product_id, cname, image_id, now_kst_str()),
                 )
                 color_id = cur.fetchone()[0]
 
-                sizes = request.form.getlist(f"size_{i}[]")
-                stocks = request.form.getlist(f"stock_{i}[]")
+                sizes = request.form.getlist(f"size_{idx}[]")
+                stocks = request.form.getlist(f"stock_{idx}[]")
 
                 for s, st in zip(sizes, stocks):
-                    s = (s or "").strip().upper()
+                    s = s.strip().upper()
                     if not s:
                         continue
-                    try:
-                        stock_i = int(st)
-                    except Exception:
-                        stock_i = 0
+                    stock = int(st or 0)
 
                     cur.execute(
                         """
                         INSERT INTO product_color_variants (color_id, size, stock)
                         VALUES (%s,%s,%s)
                         """,
-                        (color_id, s, stock_i),
+                        (color_id, s, stock),
                     )
 
             db.commit()
@@ -1130,6 +1137,7 @@ def admin_product_edit(product_id):
 
         except Exception as e:
             db.rollback()
+            flash("저장 중 오류가 발생했습니다.", "error")
             raise e
 
     return render_template(
