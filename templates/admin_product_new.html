@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-
 {% block title %}ADMIN | NEW PRODUCT{% endblock %}
 
 {% block content %}
@@ -9,17 +8,21 @@
     <form method="post" enctype="multipart/form-data" class="admin-form">
         <label class="admin-label">
             상품명
-            <input type="text" name="name" required class="admin-input" placeholder="상품명 입력">
+            <input type="text" name="name" required class="admin-input">
         </label>
 
         <label class="admin-label">
             가격 (숫자, KRW)
-            <input type="number" name="price" min="0" step="1000" class="admin-input" placeholder="예: 79000">
+            <input type="number" name="price" min="0" step="1000" class="admin-input" value="0">
         </label>
 
-        <label class="auth-label">
+        <label class="admin-label">
             상품 이미지 (여러 장 가능)
-            <input type="file" name="images" multiple accept="image/*" class="auth-input">
+            <input type="file" name="images" multiple accept="image/*" class="admin-input" id="imagesInput">
+            <div class="admin-hint">
+                업로드한 이미지 순서대로 1,2,3... 번호가 매겨진다고 생각하면 됨.
+                아래 컬러 대표 이미지는 “번호(1~N)”만 입력.
+            </div>
         </label>
 
         <label class="admin-label">
@@ -33,9 +36,18 @@
 
         <label class="admin-label">
             설명
-            <textarea name="description" rows="5" class="admin-input"
-                placeholder="소재, 핏, 디테일, 모델 정보 등을 적어주세요."></textarea>
+            <textarea name="description" rows="5" class="admin-input"></textarea>
         </label>
+
+        <hr>
+
+        <div class="admin-label" style="margin-top:6px;">컬러 / 사이즈별 재고</div>
+
+        <div id="colorBlocks"></div>
+
+        <button type="button" class="admin-secondary-button" onclick="addColorBlock()">
+            + 컬러 추가
+        </button>
 
         <div class="admin-form-actions">
             <a href="{{ url_for('admin_products') }}" class="admin-secondary-button">취소</a>
@@ -43,4 +55,61 @@
         </div>
     </form>
 </section>
+
+<script>
+    const DEFAULT_SIZES = ["S", "M", "L", "XL"];
+    let colorIndex = 0;
+
+    function addColorBlock(prefill = { name: "", image_idx: "" }) {
+        const box = document.getElementById("colorBlocks");
+        const idx = colorIndex++;
+
+        const wrap = document.createElement("div");
+        wrap.style.border = "1px solid #eee";
+        wrap.style.padding = "10px";
+        wrap.style.borderRadius = "6px";
+        wrap.style.margin = "10px 0";
+
+        wrap.innerHTML = `
+      <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+        <input class="admin-input" name="color_name[]" placeholder="COLOR (예: BLACK)" value="${prefill.name}">
+        <input class="admin-input" name="color_image_idx[]" placeholder="대표 이미지 번호(1~N)" value="${prefill.image_idx}" style="max-width:180px;">
+        <button type="button" class="admin-delete-button" onclick="this.closest('div').parentElement.remove()">삭제</button>
+      </div>
+
+      <div style="font-size:0.8rem; color:#666; margin-bottom:6px;">사이즈 / 재고</div>
+      <div class="variantRows"></div>
+
+      <button type="button" class="admin-secondary-button" onclick="addVariantRow(this, ${idx})" style="margin-top:8px;">
+        + 사이즈 추가
+      </button>
+    `;
+
+        box.appendChild(wrap);
+
+        const rows = wrap.querySelector(".variantRows");
+        DEFAULT_SIZES.forEach(s => rows.appendChild(makeVariantRow(idx, s, 0)));
+    }
+
+    function makeVariantRow(idx, size, stock) {
+        const row = document.createElement("div");
+        row.style.display = "flex";
+        row.style.gap = "8px";
+        row.style.marginBottom = "6px";
+        row.innerHTML = `
+      <input name="size_${idx}[]" class="admin-input" style="width:90px;" value="${size}" placeholder="사이즈">
+      <input name="stock_${idx}[]" type="number" min="0" class="admin-input" style="width:140px;" value="${stock}" placeholder="재고">
+      <button type="button" onclick="this.parentElement.remove()">삭제</button>
+    `;
+        return row;
+    }
+
+    function addVariantRow(btn, idx) {
+        const wrap = btn.closest("div");
+        const rows = wrap.querySelector(".variantRows");
+        rows.appendChild(makeVariantRow(idx, "", 0));
+    }
+
+    addColorBlock();
+</script>
 {% endblock %}

@@ -755,3 +755,35 @@ pre.inquiry-text {
         grid-template-columns: 1fr;
     }
 }
+
+/* COLOR 선택 표시 */
+.pd-color.active {
+    outline: 1px solid #000;
+}
+
+/* SIZE 선택 유지 표시 */
+.pd-size.is-selected {
+    border: 1px solid #000;
+    background: #000;
+    color: #fff;
+}
+
+/* SIZE 품절 빗금 */
+.pd-size.is-disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    position: relative;
+}
+
+.pd-size.is-disabled::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(135deg,
+            transparent 48%,
+            #333 49%,
+            #333 51%,
+            transparent 52%);
+    pointer-events: none;
+}

@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-
 {% block title %}ADMIN | EDIT PRODUCT{% endblock %}
 
 {% block content %}
@@ -18,87 +17,22 @@
         </label>
 
         <label class="admin-label">
-            대표 이미지(첫 번째 이미지)
-            <div class="admin-thumb" style="margin-top: 4px;">
-                <img src="{{ url_for('product_image', product_id=product.id) }}" alt="{{ product.name }}">
+            새 이미지 추가 업로드 (여러 장 가능)
+            <input type="file" name="images" multiple accept="image/*" class="admin-input">
+            <div class="admin-hint">컬러 대표 이미지에는 “이미지 ID(숫자)”를 입력합니다.</div>
+
+            {# (선택) 실수 방지용: 현재 이미지 ID 보여주기 #}
+            {% if images %}
+            <div class="admin-hint">
+                현재 이미지 ID:
+                {% for img in images %}
+                <span style="display:inline-block; margin-right:8px;">{{ img.id }}</span>
+                {% endfor %}
             </div>
+            {% endif %}
         </label>
 
         <label class="admin-label">
-            등록된 이미지 목록
-        </label>
-
-        {% if images %}
-        <div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
-            {% for img in images %}
-            <div style="width:120px;">
-                <div style="border:1px solid #ddd; border-radius:8px; overflow:hidden;">
-                    <img src="{{ url_for('product_image_by_id', image_id=img.id) }}" alt="image"
-                        style="width:100%; height:140px; object-fit:cover; display:block;">
-                </div>
-
-                <form method="post"
-                    action="{{ url_for('admin_product_image_delete', product_id=product.id, image_id=img.id) }}"
-                    style="margin-top:6px;">
-                    <button type="submit" class="admin-secondary-button" style="width:100%; padding:8px 10px;">
-                        이미지 삭제
-                    </button>
-                </form>
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <p class="helper-text" style="margin-bottom: 12px;">등록된 이미지가 없습니다.</p>
-        {% endif %}
-
-        <label class="auth-label">
-            상품 이미지 추가 업로드 (여러 장 가능)
-            <input type="file" name="images" multiple accept="image/*" class="auth-input">
-        </label>
-
-        <!-- 사이즈 / 재고 -->
-        <label class="admin-label" style="margin-top:16px;">
-            사이즈 / 재고
-        </label>
-
-        <div id="variantRows">
-            {% for v in variants %}
-            <div class="variant-row" style="display:flex; gap:8px; margin-bottom:6px;">
-                <input name="size_name[]" class="admin-input" style="width:80px;" value="{{ v.size }}"
-                    placeholder="사이즈">
-                <input name="size_stock[]" type="number" min="0" class="admin-input" style="width:120px;"
-                    value="{{ v.stock }}" placeholder="재고">
-                <button type="button" class="admin-secondary-button" onclick="removeVariantRow(this)">삭제</button>
-            </div>
-            {% endfor %}
-        </div>
-
-        <button type="button" class="admin-secondary-button" onclick="addVariantRow()" style="margin-top:8px;">
-            + 사이즈 추가
-        </button>
-
-        <script>
-            function addVariantRow() {
-                const box = document.getElementById("variantRows");
-                const row = document.createElement("div");
-                row.className = "variant-row";
-                row.style.display = "flex";
-                row.style.gap = "8px";
-                row.style.marginBottom = "6px";
-                row.innerHTML = `
-                    <input name="size_name[]" class="admin-input" style="width:80px;" placeholder="사이즈">
-                    <input name="size_stock[]" type="number" min="0" class="admin-input" style="width:120px;" value="0" placeholder="재고">
-                    <button type="button" class="admin-secondary-button" onclick="removeVariantRow(this)">삭제</button>
-                `;
-                box.appendChild(row);
-            }
-
-            function removeVariantRow(btn) {
-                btn.parentElement.remove();
-            }
-        </script>
-
-        <label class="admin-label" style="margin-top:16px;">
             카테고리
             <select name="category" class="admin-input">
                 {% for c in categories %}
@@ -112,10 +46,95 @@
             <textarea name="description" rows="5" class="admin-input">{{ product.description or "" }}</textarea>
         </label>
 
+        <hr>
+
+        <div class="admin-label" style="margin-top:6px;">컬러 / 사이즈별 재고</div>
+        <div id="colorBlocks"></div>
+
+        <button type="button" class="admin-secondary-button" onclick="addColorBlock()">
+            + 컬러 추가
+        </button>
+
         <div class="admin-form-actions">
             <a href="{{ url_for('admin_products') }}" class="admin-secondary-button">취소</a>
             <button type="submit" class="admin-button">저장</button>
         </div>
     </form>
 </section>
+
+<script>
+    const DEFAULT_SIZES = ["S", "M", "L", "XL"];
+    const EXISTING_COLORS = {{ colors| tojson }};
+    let colorIndex = 0;
+
+    function addColorBlock(prefill = { name: "", image_id: "", variants: [] }) {
+        const box = document.getElementById("colorBlocks");
+        const idx = colorIndex++;
+
+        const wrap = document.createElement("div");
+        wrap.className = "colorBlock";
+        wrap.style.border = "1px solid #eee";
+        wrap.style.padding = "10px";
+        wrap.style.borderRadius = "6px";
+        wrap.style.margin = "10px 0";
+
+        wrap.innerHTML = `
+      <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+        <input class="admin-input" name="color_name[]" placeholder="COLOR (예: BLACK)" value="${prefill.name || ""}">
+        <input class="admin-input" name="color_image_id[]" placeholder="대표 이미지 ID (숫자)" value="${prefill.image_id || ""}" style="max-width:180px;">
+        <button type="button" class="admin-delete-button" onclick="this.closest('.colorBlock').remove()">삭제</button>
+      </div>
+
+      <div style="font-size:0.8rem; color:#666; margin-bottom:6px;">사이즈 / 재고</div>
+      <div class="variantRows"></div>
+
+      <button type="button" class="admin-secondary-button" onclick="addVariantRow(this, ${idx})" style="margin-top:8px;">
+        + 사이즈 추가
+      </button>
+    `;
+
+        box.appendChild(wrap);
+
+        const rows = wrap.querySelector(".variantRows");
+
+        if (prefill.variants && prefill.variants.length > 0) {
+            prefill.variants.forEach(v => {
+                rows.appendChild(makeVariantRow(idx, (v.size || ""), (v.stock || 0)));
+            });
+        } else {
+            DEFAULT_SIZES.forEach(s => rows.appendChild(makeVariantRow(idx, s, 0)));
+        }
+    }
+
+    function makeVariantRow(idx, size, stock) {
+        const row = document.createElement("div");
+        row.style.display = "flex";
+        row.style.gap = "8px";
+        row.style.marginBottom = "6px";
+        row.innerHTML = `
+      <input name="size_${idx}[]" class="admin-input" style="width:90px;" value="${String(size).toUpperCase()}" placeholder="사이즈">
+      <input name="stock_${idx}[]" type="number" min="0" class="admin-input" style="width:140px;" value="${Number(stock) || 0}" placeholder="재고">
+      <button type="button" onclick="this.parentElement.remove()">삭제</button>
+    `;
+        return row;
+    }
+
+    function addVariantRow(btn, idx) {
+        const wrap = btn.closest(".colorBlock");
+        const rows = wrap.querySelector(".variantRows");
+        rows.appendChild(makeVariantRow(idx, "", 0));
+    }
+
+    if (EXISTING_COLORS && EXISTING_COLORS.length > 0) {
+        EXISTING_COLORS.forEach(c => {
+            addColorBlock({
+                name: c.name,
+                image_id: c.image_id,
+                variants: c.variants || [],
+            });
+        });
+    } else {
+        addColorBlock();
+    }
+</script>
 {% endblock %}

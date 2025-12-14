@@ -5,9 +5,15 @@
 <section class="pd-wrap">
     <!-- LEFT: main image -->
     <div class="pd-left">
-        <img id="pdMainImage" class="pd-image"
-            src="{% if images and images|length > 0 %}{{ url_for('product_image_by_id', image_id=images[0].id) }}{% else %}{{ url_for('product_image', product_id=product.id) }}{% endif %}"
-            alt="{{ product.name }}">
+        {# 기본은 첫 컬러 이미지, 없으면 첫 상품 이미지 #}
+        {% set first_color = colors[0] if colors and colors|length > 0 else None %}
+        {% if first_color and first_color.image_id %}
+        {% set main_src = url_for('product_image_by_id', image_id=first_color.image_id) %}
+        {% else %}
+        {% set main_src = url_for('product_image', product_id=product.id) %}
+        {% endif %}
+
+        <img id="pdMainImage" class="pd-image" src="{{ main_src }}" alt="{{ product.name }}">
     </div>
 
     <!-- RIGHT: info -->
@@ -18,89 +24,189 @@
             KRW {{ "{:,}".format(product.price) }}
         </div>
 
-        <!-- COLOR: 업로드한 이미지 개수만큼 -->
-        {% if images and images|length > 0 %}
+        <!-- COLOR -->
         <div class="pd-section">
             <div class="pd-label">COLOR</div>
+
+            {% if colors and colors|length > 0 %}
             <div class="pd-colors" id="pdColors">
-                {% for img in images %}
-                <button type="button" class="pd-color {% if loop.first %}active{% endif %}"
-                    data-img-url="{{ url_for('product_image_by_id', image_id=img.id) }}"
-                    aria-label="color {{ loop.index }}">
-                    <img src="{{ url_for('product_image_by_id', image_id=img.id) }}" alt="">
+                {% for c in colors %}
+                {% if c.image_id %}
+                {% set thumb_src = url_for('product_image_by_id', image_id=c.image_id) %}
+                {% else %}
+                {% set thumb_src = url_for('product_image', product_id=product.id) %}
+                {% endif %}
+
+                <button type="button" class="pd-color {% if loop.index0 == 0 %}active{% endif %}"
+                    data-color-id="{{ c.id }}" aria-label="{{ c.name }}" title="{{ c.name }}">
+                    <img src="{{ thumb_src }}" alt="{{ c.name }}">
                 </button>
                 {% endfor %}
             </div>
+            {% else %}
+            <div class="pd-helper">등록된 컬러가 없습니다.</div>
+            {% endif %}
         </div>
-        {% endif %}
 
-        <!-- SIZE: variants(stock)로 disabled 결정 -->
+        <!-- SIZE -->
         <div class="pd-section">
             <div class="pd-label">SIZE</div>
 
-            <div class="pd-sizes" id="pdSizes">
-                {% if variants and variants|length > 0 %}
-                {% for v in variants %}
-                {% set is_out = (v.stock|int <= 0) %} <button type="button"
-                    class="pd-size {% if is_out %}is-disabled{% endif %}" {% if is_out %}disabled{% endif %}
-                    data-size="{{ v.size }}" data-stock="{{ v.stock }}">
-                    {{ v.size }}
-                    </button>
-                    {% endfor %}
-                    {% else %}
-                    <div class="pd-helper">사이즈 정보가 없습니다.</div>
-                    {% endif %}
-            </div>
+            {# ✅ 사이즈 버튼은 JS가 (DB 데이터 기반으로) 자동 생성 #}
+            <div class="pd-sizes" id="pdSizes"></div>
+
+            <div class="pd-note" id="pdStockNote"></div>
         </div>
 
-        <!-- 버튼 -->
+        <!-- 구매 버튼 (지금은 선택만 구현) -->
         <div class="pd-actions">
-            <button class="pd-btn" id="pdBuyBtn" disabled>사이즈를 선택하세요</button>
+            <button id="pdBuyBtn" class="pd-btn" disabled>사이즈를 선택하세요</button>
         </div>
 
         {% if product.description %}
-        <div class="pd-desc">
-            {{ product.description }}
-        </div>
+        <div class="pd-desc">{{ product.description }}</div>
         {% endif %}
     </div>
 </section>
 
 <script>
-    // COLOR 클릭 -> 메인 이미지 변경 + active 표시
-    const colors = document.getElementById("pdColors");
-    const mainImg = document.getElementById("pdMainImage");
+    const COLORS = {{ colors| tojson }};
 
-    if (colors && mainImg) {
-        colors.addEventListener("click", (e) => {
-            const btn = e.target.closest(".pd-color");
-            if (!btn) return;
+    const elMainImg = document.getElementById("pdMainImage");
+    const elColors = document.getElementById("pdColors");
+    const elSizes = document.getElementById("pdSizes");
+    const elNote = document.getElementById("pdStockNote");
+    const elBuyBtn = document.getElementById("pdBuyBtn");
 
-            const url = btn.dataset.imgUrl;
-            if (url) mainImg.src = url;
+    let selectedColorId = (COLORS.length > 0) ? String(COLORS[0].id) : null;
+    let selectedSize = null;
 
-            colors.querySelectorAll(".pd-color").forEach(b => b.classList.remove("active"));
-            btn.classList.add("active");
+    function getColorById(colorId) {
+        return COLORS.find(c => String(c.id) === String(colorId)) || null;
+    }
+
+    function stockMapForColor(color) {
+        const m = {};
+        (color.variants || []).forEach(v => {
+            const key = String(v.size || "").trim().toUpperCase();
+            const st = parseInt(v.stock, 10);
+            if (key) m[key] = Number.isFinite(st) ? st : 0;
+        });
+        return m;
+    }
+
+    // ✅ 모든 컬러의 variants에서 사이즈 목록 자동 생성 (없으면 fallback)
+    function allSizesFromData() {
+        const set = new Set();
+        COLORS.forEach(c => (c.variants || []).forEach(v => {
+            const s = String(v.size || "").trim().toUpperCase();
+            if (s) set.add(s);
+        }));
+        if (set.size === 0) ["S", "M", "L", "XL"].forEach(x => set.add(x));
+        return Array.from(set);
+    }
+
+    const ALL_SIZES = allSizesFromData();
+
+    function renderSizeButtons() {
+        elSizes.innerHTML = "";
+        ALL_SIZES.forEach(s => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "pd-size";
+            btn.dataset.size = s;
+            btn.textContent = s;
+            elSizes.appendChild(btn);
         });
     }
 
-    // SIZE 클릭 -> 선택 유지(is-selected) + 구매 버튼 활성화
-    const sizes = document.getElementById("pdSizes");
-    const buyBtn = document.getElementById("pdBuyBtn");
+    function setActiveColorButton(colorId) {
+        if (!elColors) return;
+        elColors.querySelectorAll(".pd-color").forEach(btn => {
+            btn.classList.toggle("active", String(btn.dataset.colorId) === String(colorId));
+        });
+    }
 
-    if (sizes && buyBtn) {
-        sizes.addEventListener("click", (e) => {
-            const btn = e.target.closest(".pd-size");
-            if (!btn) return;
+    function clearSizeSelection() {
+        selectedSize = null;
+        elSizes.querySelectorAll(".pd-size").forEach(b => b.classList.remove("is-selected"));
+        elBuyBtn.disabled = true;
+        elBuyBtn.textContent = "사이즈를 선택하세요";
+        elNote.textContent = "";
+    }
 
-            if (btn.disabled) return; // 품절이면 클릭 안됨
+    function renderSizes(colorId) {
+        const color = getColorById(colorId);
+        if (!color) return;
 
-            sizes.querySelectorAll(".pd-size").forEach(b => b.classList.remove("is-selected"));
-            btn.classList.add("is-selected");
+        const stockMap = stockMapForColor(color);
 
-            const size = btn.dataset.size || "";
-            buyBtn.disabled = false;
-            buyBtn.textContent = size ? `${size} 구매하기` : "구매하기";
+        // 메인 이미지
+        if (color.image_id) {
+            const base = "{{ url_for('product_image_by_id', image_id=999999) }}";
+            elMainImg.src = base.replace("999999", String(color.image_id));
+        }
+
+        // 사이즈 버튼 상태 반영: variants에 존재 + stock>0이면 활성
+        elSizes.querySelectorAll(".pd-size").forEach(btn => {
+            const size = String(btn.dataset.size).trim().toUpperCase();
+
+            const exists = Object.prototype.hasOwnProperty.call(stockMap, size);
+            const stock = exists ? Number(stockMap[size]) : 0;
+
+            const enabled = exists && stock > 0;
+
+            btn.disabled = !enabled;
+            btn.classList.toggle("is-disabled", !enabled);
+
+            btn.dataset.exists = exists ? "1" : "0";
+            btn.dataset.stock = String(stock);
+        });
+
+        clearSizeSelection();
+    }
+
+    function onColorClick(e) {
+        const btn = e.target.closest(".pd-color");
+        if (!btn) return;
+
+        selectedColorId = String(btn.dataset.colorId);
+        setActiveColorButton(selectedColorId);
+        renderSizes(selectedColorId);
+    }
+
+    function onSizeClick(e) {
+        const btn = e.target.closest(".pd-size");
+        if (!btn || btn.disabled) return;
+
+        elSizes.querySelectorAll(".pd-size").forEach(b => b.classList.remove("is-selected"));
+        btn.classList.add("is-selected");
+
+        selectedSize = String(btn.dataset.size).toUpperCase();
+        const stock = Number(btn.dataset.stock || 0);
+
+        elNote.textContent = `선택: ${selectedSize} (재고 ${stock}개)`;
+        elBuyBtn.disabled = false;
+        elBuyBtn.textContent = "구매하기";
+    }
+
+    if (elColors) elColors.addEventListener("click", onColorClick);
+    elSizes.addEventListener("click", onSizeClick);
+
+    // 초기 렌더
+    renderSizeButtons();
+
+    if (selectedColorId !== null) {
+        setActiveColorButton(selectedColorId);
+        renderSizes(selectedColorId);
+    } else {
+        // 컬러 자체가 없으면 전부 구매 불가
+        elBuyBtn.disabled = true;
+        elBuyBtn.textContent = "구매 불가";
+        elNote.textContent = "등록된 컬러/재고가 없습니다.";
+        elSizes.querySelectorAll(".pd-size").forEach(btn => {
+            btn.disabled = true;
+            btn.classList.add("is-disabled");
         });
     }
 </script>

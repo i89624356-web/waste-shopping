@@ -109,7 +109,6 @@ def init_db():
     cur.execute("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS replied_at TEXT")
 
     # ---------- products ----------
-    # ✅ status 컬럼 없음
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS products (
@@ -155,6 +154,31 @@ def init_db():
             size TEXT NOT NULL,
             stock INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL
+        )
+        """
+    )
+
+    # ---------- color ----------
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS product_colors (
+            id SERIAL PRIMARY KEY,
+            product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+            color_name TEXT NOT NULL,
+            image_id INTEGER REFERENCES product_images(id),
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+
+    # ---------- Size stock by color ----------
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS product_color_variants (
+            id SERIAL PRIMARY KEY,
+            color_id INTEGER NOT NULL REFERENCES product_colors(id) ON DELETE CASCADE,
+            size TEXT NOT NULL,
+            stock INTEGER NOT NULL DEFAULT 0
         )
         """
     )
@@ -206,11 +230,6 @@ def migrate_products_from_json_if_needed():
 # products 헬퍼 (DB)
 # =======================
 def db_get_products(category: str | None = None):
-    """
-    ✅ status 제거
-    ✅ 목록에서 품절 표시를 계속하려고 total_stock 계산(variants 합)
-    - variants가 없으면 total_stock=0으로 취급(=품절)
-    """
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
@@ -221,7 +240,8 @@ def db_get_products(category: str | None = None):
                 p.id, p.name, p.price, p.image_url, p.category, p.description,
                 COALESCE(SUM(v.stock), 0) AS total_stock
             FROM products p
-            LEFT JOIN product_variants v ON v.product_id = p.id
+            LEFT JOIN product_colors c ON c.product_id = p.id
+            LEFT JOIN product_color_variants v ON v.color_id = c.id
             WHERE p.category = %s
             GROUP BY p.id, p.name, p.price, p.image_url, p.category, p.description
             ORDER BY p.sort_order ASC, p.id DESC
@@ -235,7 +255,8 @@ def db_get_products(category: str | None = None):
                 p.id, p.name, p.price, p.image_url, p.category, p.description,
                 COALESCE(SUM(v.stock), 0) AS total_stock
             FROM products p
-            LEFT JOIN product_variants v ON v.product_id = p.id
+            LEFT JOIN product_colors c ON c.product_id = p.id
+            LEFT JOIN product_color_variants v ON v.color_id = c.id
             GROUP BY p.id, p.name, p.price, p.image_url, p.category, p.description
             ORDER BY p.sort_order ASC, p.id DESC
             """
@@ -369,6 +390,8 @@ def db_insert_product_images(product_id: int, files):
     )
     order = cur.fetchone()[0]
 
+    inserted_ids = []
+
     for f in files:
         if not f or not getattr(f, "filename", ""):
             continue
@@ -379,11 +402,14 @@ def db_insert_product_images(product_id: int, files):
             """
             INSERT INTO product_images (product_id, image_data, image_mime, image_url, sort_order, created_at)
             VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
             """,
             (product_id, data, mime, "", order, ts),
         )
+        inserted_ids.append(cur.fetchone()[0])
 
     db.commit()
+    return inserted_ids
 
 
 def db_get_variants(product_id: int):
@@ -421,6 +447,124 @@ def db_replace_variants(product_id: int, sizes: list[str], stocks: list[str]):
             VALUES (%s, %s, %s, %s)
             """,
             (product_id, s.upper(), stock_i, ts),
+        )
+
+    db.commit()
+
+
+def db_get_colors(product_id):
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        """
+        SELECT c.id, c.color_name, c.image_id
+        FROM product_colors c
+        WHERE c.product_id=%s
+        ORDER BY c.id ASC
+        """,
+        (product_id,),
+    )
+    return cur.fetchall()
+
+
+def db_get_color_variants(color_id):
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        """
+        SELECT size, stock
+        FROM product_color_variants
+        WHERE color_id=%s
+        ORDER BY size ASC
+        """,
+        (color_id,),
+    )
+    return cur.fetchall()
+
+
+def db_get_color(color_id: int):
+    db = get_db()
+    cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        """
+        SELECT id, product_id, color_name, image_id
+        FROM product_colors
+        WHERE id=%s
+        """,
+        (color_id,),
+    )
+    return cur.fetchone()
+
+
+# ✅ FIX 1: 반드시 commit
+def db_delete_colors_for_product(product_id: int):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("DELETE FROM product_colors WHERE product_id=%s", (product_id,))
+    db.commit()
+
+
+# ✅ FIX 2: upsert 후 commit (edit에서 필수)
+def db_upsert_color(product_id: int, color_name: str, image_id):
+    db = get_db()
+    cur = db.cursor()
+    now = now_kst_str()
+
+    cur.execute(
+        """
+        SELECT id FROM product_colors
+        WHERE product_id=%s AND LOWER(color_name)=LOWER(%s)
+        LIMIT 1
+        """,
+        (product_id, color_name),
+    )
+    row = cur.fetchone()
+
+    if row:
+        cid = row[0]
+        cur.execute(
+            """
+            UPDATE product_colors
+            SET image_id=%s
+            WHERE id=%s
+            """,
+            (image_id, cid),
+        )
+    else:
+        cur.execute(
+            """
+            INSERT INTO product_colors (product_id, color_name, image_id, created_at)
+            VALUES (%s,%s,%s,%s)
+            RETURNING id
+            """,
+            (product_id, color_name, image_id, now),
+        )
+        cid = cur.fetchone()[0]
+
+    db.commit()
+    return cid
+
+
+# ✅ FIX 3: variants 교체 후 commit
+def db_replace_color_variants(color_id: int, sizes: list[str], stocks: list[str]):
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("DELETE FROM product_color_variants WHERE color_id=%s", (color_id,))
+
+    for s, st in zip(sizes, stocks):
+        s = (s or "").strip()
+        if not s:
+            continue
+        try:
+            stock_i = int(st)
+        except Exception:
+            stock_i = 0
+        cur.execute(
+            """
+            INSERT INTO product_color_variants (color_id, size, stock)
+            VALUES (%s,%s,%s)
+            """,
+            (color_id, s.upper(), stock_i),
         )
 
     db.commit()
@@ -781,7 +925,8 @@ def admin_inquiry_detail(inquiry_id):
 
 
 # =======================
-# 관리자 - 새 상품 추가 (여러 이미지 + 사이즈/재고)
+# 관리자 - 새 상품 추가
+# (네 HTML: color_image_idx[] “번호(1~N)” 방식에 맞춤)
 # =======================
 @app.route("/admin/products/new", methods=["GET", "POST"])
 def admin_product_new():
@@ -807,28 +952,80 @@ def admin_product_new():
             flash("가격은 숫자로 입력하세요.", "error")
             return render_template("admin_product_new.html", categories=categories)
 
-        new_id = db_create_product(
-            name=name,
-            price=price,
-            image_url="",  # 대표 이미지는 product_images의 첫 번째로
-            category=category,
-            description=description,
-            image_data=None,
-            image_mime=None,
-        )
+        db = get_db()
+        try:
+            # 1) products 생성
+            new_id = db_create_product(
+                name=name,
+                price=price,
+                image_url="",
+                category=category,
+                description=description,
+                image_data=None,
+                image_mime=None,
+            )
 
-        images = request.files.getlist("images")
-        images = [f for f in images if f and getattr(f, "filename", "")]
-        if images:
-            db_insert_product_images(new_id, images)
+            # 2) 이미지 업로드 -> product_images 저장 -> 실제 id 리스트
+            images = request.files.getlist("images")
+            images = [f for f in images if f and getattr(f, "filename", "")]
+            inserted_image_ids = []
+            if images:
+                inserted_image_ids = db_insert_product_images(new_id, images)
 
-        sizes = request.form.getlist("size_name[]")
-        stocks = request.form.getlist("size_stock[]")
-        if sizes or stocks:
-            db_replace_variants(new_id, sizes, stocks)
+            # 3) 컬러/재고 저장
+            color_names = request.form.getlist("color_name[]")
+            color_image_idxs = request.form.getlist("color_image_idx[]")
 
-        flash("새 상품이 추가되었습니다.", "success")
-        return redirect(url_for("admin_products"))
+            cur = db.cursor()
+            for idx, cname in enumerate(color_names):
+                cname = (cname or "").strip()
+                if not cname:
+                    continue
+
+                image_id = None
+                raw = color_image_idxs[idx] if idx < len(color_image_idxs) else ""
+                if raw and raw.isdigit() and inserted_image_ids:
+                    num = int(raw)
+                    if 1 <= num <= len(inserted_image_ids):
+                        image_id = inserted_image_ids[num - 1]
+
+                cur.execute(
+                    """
+                    INSERT INTO product_colors (product_id, color_name, image_id, created_at)
+                    VALUES (%s,%s,%s,%s)
+                    RETURNING id
+                    """,
+                    (new_id, cname, image_id, now_kst_str()),
+                )
+                color_id = cur.fetchone()[0]
+
+                # variants
+                sizes = request.form.getlist(f"size_{idx}[]")
+                stocks = request.form.getlist(f"stock_{idx}[]")
+                cur.execute("DELETE FROM product_color_variants WHERE color_id=%s", (color_id,))
+                for s, st in zip(sizes, stocks):
+                    s = (s or "").strip().upper()
+                    if not s:
+                        continue
+                    try:
+                        stock_i = int(st)
+                    except Exception:
+                        stock_i = 0
+                    cur.execute(
+                        """
+                        INSERT INTO product_color_variants (color_id, size, stock)
+                        VALUES (%s, %s, %s)
+                        """,
+                        (color_id, s, stock_i),
+                    )
+
+            db.commit()
+            flash("새 상품이 추가되었습니다.", "success")
+            return redirect(url_for("admin_products"))
+
+        except Exception:
+            db.rollback()
+            raise
 
     return render_template("admin_product_new.html", categories=categories)
 
@@ -857,7 +1054,20 @@ def admin_product_edit(product_id):
         flash("해당 상품을 찾을 수 없습니다.", "error")
         return redirect(url_for("admin_products"))
 
-    variants = db_get_variants(product_id)
+    images = db_get_product_images(product_id)
+    colors = db_get_colors(product_id)
+
+    color_map = []
+    for c in colors:
+        v = db_get_color_variants(c["id"])
+        color_map.append(
+            {
+                "id": c["id"],
+                "name": c["color_name"],
+                "image_id": c["image_id"],
+                "variants": v,
+            }
+        )
 
     if request.method == "POST":
         name = request.form.get("name", "").strip()
@@ -867,38 +1077,81 @@ def admin_product_edit(product_id):
 
         if not name:
             flash("상품명을 입력하세요.", "error")
-            return render_template("admin_product_edit.html", product=target, categories=categories, variants=variants)
+            return render_template(
+                "admin_product_edit.html",
+                product=target,
+                categories=categories,
+                images=images,
+                colors=color_map,
+            )
 
         try:
             price = int(price_raw) if price_raw else 0
         except ValueError:
             flash("가격은 숫자로 입력하세요.", "error")
-            return render_template("admin_product_edit.html", product=target, categories=categories, variants=variants)
+            return render_template(
+                "admin_product_edit.html",
+                product=target,
+                categories=categories,
+                images=images,
+                colors=color_map,
+            )
 
-        db_update_product(
-            product_id=product_id,
-            name=name,
-            price=price,
-            image_url=target.get("image_url", "") or "",
-            category=category,
-            description=description,
-            image_data=None,
-            image_mime=None,
-        )
+        db = get_db()
+        try:
+            # 1) 기본 정보 업데이트
+            db_update_product(
+                product_id=product_id,
+                name=name,
+                price=price,
+                image_url=target.get("image_url", "") or "",
+                category=category,
+                description=description,
+                image_data=None,
+                image_mime=None,
+            )
 
-        images = request.files.getlist("images")
-        images = [f for f in images if f and getattr(f, "filename", "")]
-        if images:
-            db_insert_product_images(product_id, images)
+            # 2) 새 이미지 업로드 추가
+            new_images = request.files.getlist("images")
+            new_images = [f for f in new_images if f and getattr(f, "filename", "")]
+            if new_images:
+                db_insert_product_images(product_id, new_images)
 
-        sizes = request.form.getlist("size_name[]")
-        stocks = request.form.getlist("size_stock[]")
-        db_replace_variants(product_id, sizes, stocks)
+            # 3) 컬러/재고는 통째로 교체
+            db_delete_colors_for_product(product_id)
 
-        flash("상품 정보가 수정되었습니다.", "success")
-        return redirect(url_for("admin_products"))
+            color_names = request.form.getlist("color_name[]")
+            color_image_ids = request.form.getlist("color_image_id[]")  # edit 템플릿 기준
 
-    return render_template("admin_product_edit.html", product=target, categories=categories, variants=variants)
+            for idx, cname in enumerate(color_names):
+                cname = (cname or "").strip()
+                if not cname:
+                    continue
+
+                raw = color_image_ids[idx] if idx < len(color_image_ids) else ""
+                image_id = int(raw) if raw and raw.isdigit() else None
+
+                color_id = db_upsert_color(product_id, cname, image_id)
+
+                sizes = request.form.getlist(f"size_{idx}[]")
+                stocks = request.form.getlist(f"stock_{idx}[]")
+                db_replace_color_variants(color_id, sizes, stocks)
+
+            db.commit()
+            flash("상품 정보가 수정되었습니다.", "success")
+            return redirect(url_for("admin_products"))
+
+        except Exception:
+            db.rollback()
+            raise
+
+    return render_template(
+        "admin_product_edit.html",
+        product=target,
+        categories=categories,
+        images=images,
+        colors=color_map,
+    )
 
 
 @app.route("/admin/products/reorder", methods=["POST"])
@@ -933,10 +1186,16 @@ def product_detail(product_id):
     if not product:
         abort(404)
 
-    images = db_get_product_images(product_id)
-    variants = db_get_variants(product_id)
+    colors = db_get_colors(product_id)
 
-    return render_template("product_detail.html", product=product, images=images, variants=variants)
+    color_map = []
+    for c in colors:
+        variants = db_get_color_variants(c["id"])
+        color_map.append(
+            {"id": c["id"], "name": c["color_name"], "image_id": c["image_id"], "variants": variants}
+        )
+
+    return render_template("product_detail.html", product=product, colors=color_map)
 
 
 # =======================
